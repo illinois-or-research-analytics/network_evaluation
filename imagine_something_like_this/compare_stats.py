@@ -7,12 +7,6 @@ import networkit as nk
 import numpy as np
 import scipy
 
-def parse_sequence(sequence_path):
-    sequence_arr = []
-    with open(sequence_path, "r") as f:
-        for line in f:
-            sequence_arr.append(float(line))
-    return sequence_arr
 
 def parse_distribution(distribution_path):
     distribution_arr = []
@@ -90,33 +84,7 @@ def compare_distributions(input_network_folder, input_replicates_folder, output_
 
 
 def compare_sequences(input_network_folder, input_replicates_folder, output_file):
-    input_sequence_stat_dict = {
-    }
-    replicates_sequence_stat_dict = {
-    }
-    replicate_folder_arr = glob.glob(f"{input_replicates_folder}/*")
-    num_replicates = len(replicate_folder_arr)
-
-    current_sequence_arr = glob.glob(f"{input_network_folder}/*.sequence")
-    sequence_name_arr = []
-    for current_sequence_file in current_sequence_arr:
-        sequence_name = Path(current_sequence_file).stem
-        sequence_name_arr.append(sequence_name)
-        input_sequence_stat_dict[sequence_name] = parse_sequence(current_sequence_file)
-
-    for current_replicate_index in range(num_replicates):
-        replicates_sequence_stat_dict[current_replicate_index] = {}
-        for current_sequence_name in sequence_name_arr:
-            current_sequence_file = f"{replicate_folder_arr[current_replicate_index]}/{current_sequence_name}.sequence"
-            replicates_sequence_stat_dict[current_replicate_index][current_sequence_name] = parse_sequence(current_sequence_file)
-
-    for current_sequence_name in sequence_name_arr:
-        print(f"evaluating {current_sequence_name} l2 norm")
-        for current_replicate_index in range(num_replicates):
-            input_sequence = input_sequence_stat_dict[current_sequence_name]
-            replicate_sequence = replicates_sequence_stat_dict[current_replicate_index][current_sequence_name]
-            difference_sequence = np.subtract(input_sequence, replicate_sequence)
-            print(f"replicate {current_replicate_index}: {np.linalg.norm(difference_sequence, ord=2)}")
+    pass
 
 @click.command()
 @click.option("--input-network-folder", required=True, type=click.Path(exists=True), help="Input network stats folder")
