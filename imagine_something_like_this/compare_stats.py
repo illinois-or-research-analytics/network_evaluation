@@ -25,6 +25,7 @@ def parse_json(stats_path):
     with open(stats_path, "r") as f:
         return json.load(f)
 
+
 def compare_scalars(input_network_folder, input_replicates_folder, output_file):
     input_scalar_stat_dict = {
     }
@@ -59,7 +60,6 @@ def compare_scalars(input_network_folder, input_replicates_folder, output_file):
         print(f"{input_scalar_name} absolute difference: {current_absolute_difference}")
 
 
-
 def compare_distributions(input_network_folder, input_replicates_folder, output_file):
     input_distribution_stat_dict = {
     }
@@ -81,13 +81,13 @@ def compare_distributions(input_network_folder, input_replicates_folder, output_
             current_distribution_file = f"{replicate_folder_arr[current_replicate_index]}/{current_distribution_name}.distribution"
             replicates_distribution_stat_dict[current_replicate_index][current_distribution_name] = parse_distribution(current_distribution_file)
 
-
     for current_distribution_name in distribution_name_arr:
         print(f"evaluating {current_distribution_name} k-s stat")
         for current_replicate_index in range(num_replicates):
             input_distribution = input_distribution_stat_dict[current_distribution_name]
             replicate_distribution = replicates_distribution_stat_dict[current_replicate_index][current_distribution_name]
             print(f"replicate {current_replicate_index}: {scipy.stats.ks_2samp(input_distribution, replicate_distribution)}")
+
 
 def compare_sequences(input_network_folder, input_replicates_folder, output_file):
     input_sequence_stat_dict = {
@@ -109,7 +109,6 @@ def compare_sequences(input_network_folder, input_replicates_folder, output_file
         for current_sequence_name in sequence_name_arr:
             current_sequence_file = f"{replicate_folder_arr[current_replicate_index]}/{current_sequence_name}.sequence"
             replicates_sequence_stat_dict[current_replicate_index][current_sequence_name] = parse_sequence(current_sequence_file)
-
 
     for current_sequence_name in sequence_name_arr:
         print(f"evaluating {current_sequence_name} l2 norm")
