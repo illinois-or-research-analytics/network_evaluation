@@ -1,4 +1,10 @@
 {
-    "num_nodes": 34546,
-    "num_edges": 420877
+    "n_nodes": 34546,
+    "n_edges": 420877,
+    "n_onodes": 5877,
+    "n_concomp": 61,
+    "global_ccoeff": 0.14566,
+    "deg_assort": -0.00629,
+    "o_o_edges": 3316,
+    "o_no_edges": 18415
 }
