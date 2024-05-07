@@ -9,6 +9,9 @@ import networkit as nk
 import numpy as np
 import pandas as pd
 import networkx as nx
+from collections import defaultdict
+
+import cluster_stats as cls_stats
 
 @click.command()
 @click.option("--input-network", required=True, type=click.Path(exists=True), help="Input network")
@@ -28,12 +31,12 @@ def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_
 
     #Generate node ordering if external node ordering not provided!
     if node_ordering is None:
-        node_ordering_dict = elr.getNodeMap()
-        node_ordering_dict_reversed = {v: int(k) for k, v in node_ordering_dict.items()}
+        node_mapping_dict = elr.getNodeMap()
+        node_mapping_dict_reversed = {v: int(k) for k, v in node_mapping_dict.items()}
         dir_path = Path(output_json).parent
         with open(str(dir_path)+"/node_ordering.idx","w") as idx_f:
             for node in graph.iterNodes():
-                idx_f.write(str(node_ordering_dict_reversed.get(node))+"\n")
+                idx_f.write(str(node_mapping_dict_reversed.get(node))+"\n")
 
     #Generate cluster ordering if external cluster ordering not provided!
     clustering_dict, cluster_ordering_dict = read_clustering(input_clustering)
@@ -64,11 +67,11 @@ def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_
 
     """outlier nodes stats"""
     #S13 number of outliers
-    outlier_nodes, clustered_nodes = get_outliers(graph, node_ordering_dict , clustering_dict)
+    outlier_nodes, clustered_nodes = get_outliers(graph, node_mapping_dict , clustering_dict)
     n_onodes = len(outlier_nodes)
     with open(str(dir_path)+"/outlier_ordering.idx","w") as idx_f:
             for node in outlier_nodes:
-                idx_f.write(str(node_ordering_dict_reversed.get(node))+"\n")
+                idx_f.write(str(node_mapping_dict_reversed.get(node))+"\n")
     with open(str(dir_path)+"/outliers.tsv","w") as idx_f:
             for node in outlier_nodes:
                 idx_f.write(str(node)+"\n")
@@ -90,12 +93,20 @@ def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_
 
     #S17 degree distribution for edges that connect outlier nodes to non-outlier nodes
     # Should this distribution include outlier-outlier edges?
+    """Cluster Statistics!"""
+    #Getting cluster statistics
+    cluster_stats_path = str(dir_path) + "/cluster_stats.csv"
+    cls_stats.main(input=input_network, existing_clustering=input_clustering, resolution=-1, universal_before="", output=cluster_stats_path)
+    #Reading the saved cluster statistics
+    cluster_stats = pd.read_csv(cluster_stats_path)
+    cluster_stats = cluster_stats.drop(cluster_stats.index[-1])
 
     #S18 number of disconnected clusters
-    
+    disconnected_clusters = (cluster_stats['connectivity_normalized_log10(n)'] < 1).sum()
 
     #S19 and S20 mininum cut size distribution - mincut sequence
-
+    mincuts_distr = cluster_stats['connectivity'].values
+    
     #S21 diameter
 
     #S22 mixiting time
@@ -103,7 +114,20 @@ def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_
     #S23 Jaccard similarity
 
     #S24 Participation coefficient distribution
-
+    participation_dict = get_participation_coeffs(graph, clustering_dict, node_mapping_dict_reversed)
+    print("Started computing participation coefficients! ")
+    participation_coeffs = []
+    outlier_participation_coeffs = {}
+    for node,participation in participation_dict.items():
+        deg_of_node = sum(list(participation.values()))
+        coeff = 1
+        if deg_of_node > 0 :
+            coeff -= np.sum([(deg_i/deg_of_node)**2 for deg_i in list(participation.values())])
+            coeff = round(coeff,5)
+        participation_coeffs.append(coeff)
+        if node in outlier_nodes:
+            outlier_participation_coeffs[node] = coeff
+    o_participation_coeffs_distr = [outlier_participation_coeffs.get(v) for v in outlier_nodes]
     
     #Save scalar statistics
     stats_dict = {}
@@ -130,6 +154,8 @@ def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_
         stats_dict["deg_assort"] = deg_assort
     if "global_ccoeff" not in stats_dict or overwrite:
         stats_dict["global_ccoeff"] = global_ccoeff
+    if "n_disconnects" not in stats_dict or overwrite:
+        stats_dict["n_disconnects"] = int(disconnected_clusters)
 
     with stats_file.open("w") as f:
         json.dump(stats_dict, f, indent=4)
@@ -139,9 +165,13 @@ def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_
     distr_stats_dict['degree'] = deg_distr
     distr_stats_dict['concomp_sizes'] = concomp_sizes_distr
     distr_stats_dict['osub_degree'] = osub_deg_distr
-    distr_stats_dict['o_deg_distr'] = o_deg_distr
-    distr_stats_dict['c_size_distr'] = cluster_size_distr
-    distr_stats = ['degree', 'concomp_sizes','osub_degree','o_deg_distr','c_size_distr']
+    distr_stats_dict['o_deg'] = o_deg_distr
+    distr_stats_dict['c_size'] = cluster_size_distr
+    distr_stats_dict['mincuts'] = mincuts_distr
+    distr_stats_dict['participation_coeffs'] = participation_coeffs
+    distr_stats_dict['o_participation_coeffs'] = o_participation_coeffs_distr
+
+    distr_stats = ['degree', 'concomp_sizes','osub_degree','o_deg','c_size','mincuts','participation_coeffs','o_participation_coeffs']
     dir_path = Path(output_json).parent
     distribution_arr = glob.glob(f"{dir_path}/*.distribution")
     distribution_name_arr = []
@@ -191,6 +221,23 @@ def get_cluster_size_distr(clustering_dict):
     for i in range(len(cluster_size_dict.keys())):
         cluster_size_distr.append(cluster_size_dict.get(i))
     return cluster_size_distr
+
+def get_participation_coeffs(graph, clustering_dict, node_mapping_dict_reversed):
+    participation_dict = defaultdict(dict)
+    for v in graph.iterNodes():
+        for neighbor in graph.iterNeighbors(v):
+            neighbor_cluster = clustering_dict.get(node_mapping_dict_reversed.get(neighbor))
+            if neighbor_cluster is None:
+                neighbor_cluster = -1
+            node_participation_dict = participation_dict[v]
+            if neighbor_cluster in node_participation_dict.keys():
+                node_participation_dict[neighbor_cluster] = node_participation_dict.get(neighbor_cluster) + 1
+            else:
+                node_participation_dict[neighbor_cluster] = 1
+        if graph.isIsolated(v):
+            participation_dict[v] = {-1:0}
+        
+    return participation_dict
 
 if __name__ == "__main__":
     compute_basic_stats()
