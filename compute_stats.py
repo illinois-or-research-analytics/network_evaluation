@@ -17,9 +17,9 @@ import cluster_stats as cls_stats
 @click.command()
 @click.option("--input-network", required=True, type=click.Path(exists=True), help="Input network")
 @click.option("--input-clustering", required=True, type=click.Path(exists=True), help="Input clustering")
-@click.option("--output-json", required=True, type=click.Path(), help="Ouput json file")
+@click.option("--output-folder", required=True, type=click.Path(), help="Ouput folder")
 @click.option("--overwrite", is_flag=True, help="Whether to overwrite existing data")
-def compute_basic_stats(input_network, input_clustering, output_json, overwrite):
+def compute_basic_stats(input_network, input_clustering, output_folder, overwrite):
     """ input network and input clustering have no constraints
     files created inside output_folder where one file is created for generic stats and maybe more files
     for others
@@ -28,12 +28,14 @@ def compute_basic_stats(input_network, input_clustering, output_json, overwrite)
     elr = nk.graphio.EdgeListReader('\t', 0, continuous=False, directed=False)
     graph = elr.read(input_network)
 
+    # Prepare output folder
+    dir_path = Path(output_folder)
+    dir_path.mkdir(parents=True, exist_ok=True)
+
     # Generate node ordering if external node ordering not provided!
     node_mapping_dict = elr.getNodeMap()
     node_mapping_dict_reversed = {
         v: int(k) for k, v in node_mapping_dict.items()}
-    dir_path = Path(output_json).parent
-    dir_path.mkdir(parents=True, exist_ok=True)
     with open(str(dir_path)+"/node_ordering.idx", "w") as idx_f:
         for node in graph.iterNodes():
             idx_f.write(str(node_mapping_dict_reversed.get(node))+"\n")
@@ -139,7 +141,7 @@ def compute_basic_stats(input_network, input_clustering, output_json, overwrite)
 
     # Save scalar statistics
     stats_dict = {}
-    stats_file = Path(output_json)
+    stats_file = Path(output_folder) / "stats.json"
     file_rw_bit = "w"
     if stats_file.is_file():
         file_rw_bit = "r"
@@ -181,7 +183,6 @@ def compute_basic_stats(input_network, input_clustering, output_json, overwrite)
 
     distr_stats = ['degree', 'concomp_sizes', 'osub_degree', 'o_deg',
                    'c_size', 'mincuts', 'participation_coeffs', 'o_participation_coeffs']
-    dir_path = Path(output_json).parent
     distribution_arr = glob.glob(f"{dir_path}/*.distribution")
     distribution_name_arr = []
     for current_distribution_file in distribution_arr:
