@@ -17,11 +17,9 @@ import cluster_stats as cls_stats
 @click.command()
 @click.option("--input-network", required=True, type=click.Path(exists=True), help="Input network")
 @click.option("--input-clustering", required=True, type=click.Path(exists=True), help="Input clustering")
-@click.option("--node-ordering", required=False, type=click.Path(exists=True), help="Node ordering")
-@click.option("--cluster-ordering", required=False, type=click.Path(exists=True), help="Cluster ordering")
 @click.option("--output-json", required=True, type=click.Path(), help="Ouput json file")
 @click.option("--overwrite", is_flag=True, help="Whether to overwrite existing data")
-def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_ordering, output_json, overwrite):
+def compute_basic_stats(input_network, input_clustering, output_json, overwrite):
     """ input network and input clustering have no constraints
     files created inside output_folder where one file is created for generic stats and maybe more files
     for others
@@ -31,21 +29,20 @@ def compute_basic_stats(input_network, input_clustering, node_ordering, cluster_
     graph = elr.read(input_network)
 
     # Generate node ordering if external node ordering not provided!
-    if node_ordering is None:
-        node_mapping_dict = elr.getNodeMap()
-        node_mapping_dict_reversed = {
-            v: int(k) for k, v in node_mapping_dict.items()}
-        dir_path = Path(output_json).parent
-        with open(str(dir_path)+"/node_ordering.idx", "w") as idx_f:
-            for node in graph.iterNodes():
-                idx_f.write(str(node_mapping_dict_reversed.get(node))+"\n")
+    node_mapping_dict = elr.getNodeMap()
+    node_mapping_dict_reversed = {
+        v: int(k) for k, v in node_mapping_dict.items()}
+    dir_path = Path(output_json).parent
+    dir_path.mkdir(parents=True, exist_ok=True)
+    with open(str(dir_path)+"/node_ordering.idx", "w") as idx_f:
+        for node in graph.iterNodes():
+            idx_f.write(str(node_mapping_dict_reversed.get(node))+"\n")
 
     # Generate cluster ordering if external cluster ordering not provided!
     clustering_dict, cluster_ordering_dict = read_clustering(input_clustering)
-    if cluster_ordering is None:
-        with open(str(dir_path)+"/cluster_ordering.idx", "w") as idx_f:
-            for key, value in cluster_ordering_dict.items():
-                idx_f.write(str(key)+"\n")
+    with open(str(dir_path)+"/cluster_ordering.idx", "w") as idx_f:
+        for key, value in cluster_ordering_dict.items():
+            idx_f.write(str(key)+"\n")
 
     # S1 and S2 - number of nodes and edges
     n_nodes = graph.numberOfNodes()
