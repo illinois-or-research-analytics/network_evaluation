@@ -27,6 +27,8 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
     # Read the network
     elr = nk.graphio.EdgeListReader('\t', 0, continuous=False, directed=False)
     graph = elr.read(input_network)
+    graph.removeMultiEdges()
+    graph.removeSelfLoops()
 
     # Prepare output folder
     dir_path = Path(output_folder)
@@ -132,6 +134,9 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
         if deg_of_node > 0:
             coeff -= np.sum([(deg_i/deg_of_node) **
                             2 for deg_i in list(participation.values())])
+            if -1 in participation.keys():
+                coeff += (participation.get(-1)/deg_of_node)**2
+                coeff -= participation.get(-1)*((1/deg_of_node)**2)
             coeff = round(coeff, 5)
         participation_coeffs.append(coeff)
         if node in outlier_nodes:

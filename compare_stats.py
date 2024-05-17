@@ -11,8 +11,10 @@ import pandas as pd
 from constants import (
     NODE_ORDER_FN,
     COMM_ORDER_FN,
+    OUTLIER_ORDER_FN,
     NODE_DISTR_STATS,
     COMM_DISTR_STATS,
+    OUTLIER_DISTR_STATS
 )
 
 
@@ -45,10 +47,19 @@ def sequence_distance(input_sequence, replicate_sequence):
     try:
         d = np.linalg.norm(
             input_sequence - replicate_sequence, ord=1)
+        d = d/len(input_sequence)
     except Exception as e:
         print(f"error: {e}")
         d = np.nan
-    return d
+
+    try:
+        d2 = np.linalg.norm(
+            input_sequence - replicate_sequence, ord=2)
+    except Exception as e:
+        print(f"error: {e}")
+        d2 = np.nan
+
+    return d, d2
 
 
 def compare_scalars(
@@ -203,6 +214,11 @@ def compare_sequences(
                         header=None, names=['id'])
             if os.path.exists(f"{input_network_folder}/{COMM_ORDER_FN}")
             else None,
+        'o_node':
+            pd.read_csv(f"{input_network_folder}/{OUTLIER_ORDER_FN}",
+                        header=None, names=['id'])
+            if os.path.exists(f"{input_network_folder}/{OUTLIER_ORDER_FN}")
+            else None,
     }
 
     current_sequence_arr = glob.glob(
@@ -235,6 +251,14 @@ def compare_sequences(
                 )
                 if os.path.exists(f"{current_replicate_folder}/{COMM_ORDER_FN}")
                 else None,
+            'o_node':
+                pd.read_csv(
+                    f"{current_replicate_folder}/{OUTLIER_ORDER_FN}",
+                    header=None,
+                    names=['id'],
+                )
+                if os.path.exists(f"{current_replicate_folder}/{OUTLIER_ORDER_FN}")
+                else None,
         }
 
         replicates_sequence_stat_dict[current_replicate_index] = {}
@@ -245,6 +269,7 @@ def compare_sequences(
                 parse_distribution(current_sequence_file)
 
     diff_dict = dict()
+    diff_dict2 = dict()
     for current_sequence_name in sequence_name_arr:
         if current_sequence_name in NODE_DISTR_STATS:
             df_input_ids = input_ids_df_dict['node']
@@ -252,10 +277,14 @@ def compare_sequences(
         elif current_sequence_name in COMM_DISTR_STATS:
             df_input_ids = input_ids_df_dict['comm']
             assert df_input_ids is not None
+        elif current_sequence_name in OUTLIER_DISTR_STATS:
+            df_input_ids = input_ids_df_dict['o_node']
+            assert df_input_ids is not None
         else:
             continue
 
         diff_dict[current_sequence_name] = dict()
+        diff_dict2[current_sequence_name+"_l2"] = dict()
 
         print(f"evaluating {current_sequence_name}")
 
@@ -272,6 +301,9 @@ def compare_sequences(
                 assert df_replicate_ids is not None
             elif current_sequence_name in COMM_DISTR_STATS:
                 df_replicate_ids = replicate_ids_df_dict[current_replicate_index]['comm']
+                assert df_replicate_ids is not None
+            elif current_sequence_name in OUTLIER_DISTR_STATS:
+                df_replicate_ids = replicate_ids_df_dict[current_replicate_index]['o_node']
                 assert df_replicate_ids is not None
             else:
                 continue
@@ -293,12 +325,14 @@ def compare_sequences(
             # assert len(df_joined) == len(df_input) and len(
             #     df_joined) == len(df_replicate)
 
-            diff = sequence_distance(
+            diff,diff2 = sequence_distance(
                 df_joined['input'].values,
                 df_joined['replicate'].values,
             )
             diff_dict[current_sequence_name][current_replicate_index] = diff
+            diff_dict2[current_sequence_name+"_l2"][current_replicate_index] = diff2
             print(f"replicate {current_replicate_index}: {diff}")
+            print(f"replicate {current_replicate_index}: {diff2}")
 
     # Write results to csv
     df_dict = {
@@ -310,6 +344,13 @@ def compare_sequences(
             for replicate_id in range(num_replicates)
         ]
         for sequence_name, diff_dict_seq in diff_dict.items()
+    })
+    df_dict.update({
+        sequence_name: [
+            diff_dict_seq[replicate_id]
+            for replicate_id in range(num_replicates)
+        ]
+        for sequence_name, diff_dict_seq in diff_dict2.items()
     })
     df = pd.DataFrame(df_dict)
     df.to_csv(
