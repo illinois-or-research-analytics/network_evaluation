@@ -89,6 +89,9 @@ def compare_scalars(
     relative_diff_dict = {}
     statistical_diff_dict = {}
     for name, input_value in input_scalar_stat_dict.items():
+        #The-Anh: maybe just compute and store the difference and percentage change of each replicate
+        #i.e. (rep_value - input_value) and (rep_value - input_value) / input_value
+        
         current_value_arr = [
             replicates_scalar_stat_dict[replicate_index][name]
             for replicate_index in range(num_replicates)
