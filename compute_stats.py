@@ -120,8 +120,9 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
     diameter = compute_diameter(graph)
 
     # S22 mixiting parameter
-    # mixing_param = compute_mixing_param(graph, clustering_dict, node_mapping_dict_reversed)
-    mixing_param = compute_xi(graph, clustering_dict, node_mapping_dict_reversed)
+    mus = compute_mus(graph, clustering_dict, node_mapping_dict_reversed)
+    mixing_param = compute_xi(graph, clustering_dict,
+                              node_mapping_dict_reversed)
 
     # S23 Jaccard similarity
 
@@ -190,11 +191,21 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
     distr_stats_dict['o_deg'] = o_deg_distr
     distr_stats_dict['c_size'] = cluster_size_distr
     distr_stats_dict['mincuts'] = mincuts_distr
+    distr_stats_dict['mixing_mus'] = mus
     distr_stats_dict['participation_coeffs'] = participation_coeffs
     distr_stats_dict['o_participation_coeffs'] = o_participation_coeffs_distr
 
-    distr_stats = ['degree', 'concomp_sizes', 'osub_degree', 'o_deg',
-                   'c_size', 'mincuts', 'participation_coeffs', 'o_participation_coeffs']
+    distr_stats = [
+        'degree',
+        'concomp_sizes',
+        'osub_degree',
+        'o_deg',
+        'c_size',
+        'mincuts',
+        'mixing_mus',
+        'participation_coeffs',
+        'o_participation_coeffs',
+    ]
     distribution_arr = glob.glob(f"{dir_path}/*.distribution")
     distribution_name_arr = []
     for current_distribution_file in distribution_arr:
@@ -252,23 +263,26 @@ def get_cluster_size_distr(clustering_dict):
     return cluster_size_distr
 
 
-# def compute_mixing_param(net, clustering_dict, node_mapping_dict_reversed):
-#     in_degree = defaultdict(int)
-#     out_degree = defaultdict(int)
-#     clustered_keys = clustering_dict.keys()
-#     for node1, node2 in net.iterEdges():
-#         n1 = node_mapping_dict_reversed.get(node1)
-#         n2 = node_mapping_dict_reversed.get(node2)
-#         if n1 in clustered_keys and n2 in clustered_keys:
-#             if clustering_dict[n1] == clustering_dict[n2]: # nodes are co-clustered
-#                 in_degree[node1] += 1
-#                 in_degree[node2] += 1
-#         else:
-#             out_degree[node1] += 1
-#             out_degree[node2] += 1
-#     mus = [out_degree[i]/(out_degree[i]+in_degree[i]) if (out_degree[i]+in_degree[i]) != 0 else 0 for i in net.iterNodes()]
-#     mixing_param = np.mean(mus)
-#     return round(mixing_param, 4)
+def compute_mus(net, clustering_dict, node_mapping_dict_reversed):
+    in_degree = defaultdict(int)
+    out_degree = defaultdict(int)
+    clustered_keys = clustering_dict.keys()
+    for node1, node2 in net.iterEdges():
+        n1 = node_mapping_dict_reversed.get(node1)
+        n2 = node_mapping_dict_reversed.get(node2)
+        if n1 in clustered_keys and n2 in clustered_keys:
+            if clustering_dict[n1] == clustering_dict[n2]:  # nodes are co-clustered
+                in_degree[node1] += 1
+                in_degree[node2] += 1
+        else:
+            out_degree[node1] += 1
+            out_degree[node2] += 1
+    mus = [out_degree[i]/(out_degree[i]+in_degree[i]) if (out_degree[i] +
+                                                          in_degree[i]) != 0 else 0 for i in net.iterNodes()]
+    return mus
+    # mixing_param = np.mean(mus)
+    # return round(mixing_param, 4)
+
 
 def compute_xi(graph, clustering_dict, node_mapping_dict_reversed):
     in_degree = defaultdict(int)
@@ -288,12 +302,15 @@ def compute_xi(graph, clustering_dict, node_mapping_dict_reversed):
     xi = np.sum(outs) / 2 / (graph.numberOfEdges())
     return xi
 
+
 def compute_diameter(graph):
-    connected_graph = nk.components.ConnectedComponents.extractLargestConnectedComponent(graph, True)
-    diam = nk.distance.Diameter(connected_graph,algo=1)
+    connected_graph = nk.components.ConnectedComponents.extractLargestConnectedComponent(
+        graph, True)
+    diam = nk.distance.Diameter(connected_graph, algo=1)
     diam.run()
     diameter = diam.getDiameter()
     return diameter[0]
+
 
 def get_participation_coeffs(graph, clustering_dict, node_mapping_dict_reversed):
     participation_dict = defaultdict(dict)
