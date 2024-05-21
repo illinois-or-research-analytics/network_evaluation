@@ -120,7 +120,8 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
     diameter = compute_diameter(graph)
 
     # S22 mixiting parameter
-    mixing_param = compute_mixing_param(graph, clustering_dict, node_mapping_dict_reversed)
+    # mixing_param = compute_mixing_param(graph, clustering_dict, node_mapping_dict_reversed)
+    mixing_param = compute_xi(graph, clustering_dict, node_mapping_dict_reversed)
 
     # S23 Jaccard similarity
 
@@ -251,23 +252,41 @@ def get_cluster_size_distr(clustering_dict):
     return cluster_size_distr
 
 
-def compute_mixing_param(net, clustering_dict, node_mapping_dict_reversed):
+# def compute_mixing_param(net, clustering_dict, node_mapping_dict_reversed):
+#     in_degree = defaultdict(int)
+#     out_degree = defaultdict(int)
+#     clustered_keys = clustering_dict.keys()
+#     for node1, node2 in net.iterEdges():
+#         n1 = node_mapping_dict_reversed.get(node1)
+#         n2 = node_mapping_dict_reversed.get(node2)
+#         if n1 in clustered_keys and n2 in clustered_keys:
+#             if clustering_dict[n1] == clustering_dict[n2]: # nodes are co-clustered
+#                 in_degree[node1] += 1
+#                 in_degree[node2] += 1
+#         else:
+#             out_degree[node1] += 1
+#             out_degree[node2] += 1
+#     mus = [out_degree[i]/(out_degree[i]+in_degree[i]) if (out_degree[i]+in_degree[i]) != 0 else 0 for i in net.iterNodes()]
+#     mixing_param = np.mean(mus)
+#     return round(mixing_param, 4)
+
+def compute_xi(graph, clustering_dict, node_mapping_dict_reversed):
     in_degree = defaultdict(int)
     out_degree = defaultdict(int)
-    clustered_keys = clustering_dict.keys()
-    for node1, node2 in net.iterEdges():
+    for node1, node2 in graph.iterEdges():
         n1 = node_mapping_dict_reversed.get(node1)
         n2 = node_mapping_dict_reversed.get(node2)
-        if n1 in clustered_keys and n2 in clustered_keys:
-            if clustering_dict[n1] == clustering_dict[n2]: # nodes are co-clustered
-                in_degree[n1] += 1
-                in_degree[n2] += 1
+        if n1 not in clustering_dict or n2 not in clustering_dict:
+            continue
+        if clustering_dict[n1] == clustering_dict[n2]:  # nodes are co-clustered
+            in_degree[node1] += 1
+            in_degree[node2] += 1
         else:
-            out_degree[n1] += 1
-            out_degree[n2] += 1
-    mus = [out_degree[i]/(out_degree[i]+in_degree[i]) if (out_degree[i]+in_degree[i]) != 0 else 0 for i in net.iterNodes()]
-    mixing_param = np.mean(mus)
-    return round(mixing_param, 4)
+            out_degree[node1] += 1
+            out_degree[node2] += 1
+    outs = [out_degree[i] for i in graph.iterNodes()]
+    xi = np.sum(outs) / 2 / (graph.numberOfEdges())
+    return xi
 
 def compute_diameter(graph):
     connected_graph = nk.components.ConnectedComponents.extractLargestConnectedComponent(graph, True)
