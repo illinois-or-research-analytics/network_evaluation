@@ -31,15 +31,29 @@ def parse_json(stats_path):
         return json.load(f)
 
 
-def distribution_distance(input_distribution, replicate_distribution):
-    try:
+def scalar_distance(input_scalar, replicate_scalar, dist_type):
+    if dist_type == 'abs_diff':
+        d = abs(input_scalar - replicate_scalar)
+    elif dist_type == 'rel_diff':
+        d = abs(input_scalar - replicate_scalar) / input_scalar
+    else:
+        raise ValueError(f"Unknown distance type: {dist_type}")
+    return d
+
+
+def distribution_distance(input_distribution, replicate_distribution, dist_type):
+    if dist_type == 'ks':
         d = scipy.stats.ks_2samp(
             input_distribution,
             replicate_distribution,
         ).statistic
-    except Exception as e:
-        print(f"error: {e}")
-        d = np.nan
+    elif dist_type == 'emd':
+        d = scipy.stats.wasserstein_distance(
+            input_distribution,
+            replicate_distribution,
+        )
+    else:
+        raise ValueError(f"Unknown distance type: {dist_type}")
     return d
 
 
@@ -79,11 +93,18 @@ def compare_scalars(
     for name in common_stats:
         diff_dict[name] = dict()
 
-        diff = abs(network_1_stats[name] - network_2_stats[name])
-        diff_dict[name]['abs_diff'] = diff
+        for dist_type in ['abs_diff', 'rel_diff']:
+            try:
+                diff = scalar_distance(
+                    network_1_stats[name],
+                    network_2_stats[name],
+                    dist_type,
+                )
+            except Exception as e:
+                print(f"[ERROR] ({dist_type}) {e}")
+                diff = np.nan
 
-        # relative_diff = diff / network_1_stats[name]
-        # diff_dict[name]['rel_diff'] = relative_diff
+            diff_dict[name][dist_type] = diff
 
     df_lists = [
         [
@@ -101,57 +122,58 @@ def compare_scalars(
 def compare_distributions(
     network_1_folder,
     network_2_folder,
-) -> None:
-    # TODO: not done yet
-    current_distribution_arr = \
+) -> pd.DataFrame:
+    network_1_fns = \
         glob.glob(f"{network_1_folder}/*.distribution")
-    distribution_name_arr = []
-    for current_distribution_file in current_distribution_arr:
-        distribution_name = Path(current_distribution_file).stem
-        distribution_name_arr.append(distribution_name)
-        input_distribution_stat_dict[distribution_name] = parse_distribution(
-            current_distribution_file)
+    network_1_stats = dict()
+    for fn in network_1_fns:
+        name = Path(fn).stem
+        network_1_stats[name] = parse_distribution(fn)
 
-    for current_replicate_index in range(num_replicates):
-        replicates_distribution_stat_dict[current_replicate_index] = {}
-        for current_distribution_name in distribution_name_arr:
-            current_distribution_file = f"{
-                replicate_folder_arr[current_replicate_index]}/{current_distribution_name}.distribution"
-            replicates_distribution_stat_dict[current_replicate_index][current_distribution_name] = parse_distribution(
-                current_distribution_file)
+    network_2_fns = \
+        glob.glob(f"{network_2_folder}/*.distribution")
+    network_2_stats = dict()
+    for fn in network_2_fns:
+        name = Path(fn).stem
+        network_2_stats[name] = parse_distribution(fn)
+
+    common_stats = set(
+        network_1_stats.keys()
+    ).intersection(
+        network_2_stats.keys()
+    )
 
     diff_dict = dict()
-    for distribution_name in distribution_name_arr:
-        print(f"evaluating {distribution_name} k-s stat")
-        diff_dict[distribution_name] = dict()
-        for replicate_id in range(num_replicates):
-            input_distribution = input_distribution_stat_dict[distribution_name]
-            replicate_distribution = \
-                replicates_distribution_stat_dict[replicate_id][distribution_name]
-            diff = distribution_distance(
-                input_distribution,
-                replicate_distribution,
-            )
-            diff_dict[distribution_name][replicate_id] = diff
-            print(f"replicate {replicate_id}: {diff}")
+    for name in common_stats:
+        diff_dict[name] = dict()
 
-    # Write results to csv
-    df_dict = {
-        'replicate_id': list(range(num_replicates)),
-    }
-    df_dict.update({
-        distribution_name: [
-            diff_dict_distribution[replicate_id]
-            for replicate_id in range(num_replicates)
+        network_1_distr = network_1_stats[name]
+        network_2_distr = network_2_stats[name]
+
+        for dist_type in ['ks', 'emd']:
+            try:
+                diff = distribution_distance(
+                    network_1_distr,
+                    network_2_distr,
+                    dist_type,
+                )
+            except Exception as e:
+                print(f"[ERROR] ({dist_type}) {e}")
+                diff = np.nan
+
+            diff_dict[name][dist_type] = diff
+
+    df_lists = [
+        [
+            name,
+            'distribution',
+            diff_type,
+            diff,
         ]
-        for distribution_name, diff_dict_distribution in diff_dict.items()
-    })
-    df = pd.DataFrame(df_dict)
-    df.to_csv(
-        f"{output_folder}/distribution_distance.csv",
-        index=False,
-        float_format='%.4f',
-    )
+        for name, diff_dict in diff_dict.items()
+        for diff_type, diff in diff_dict.items()
+    ]
+    return df_lists
 
 
 def compare_sequences(
@@ -185,11 +207,12 @@ def compare_stats(
         )
     df_list.extend(scalars_df_list)
 
-    # distributions_df_list = \
-    #     compare_distributions(
-    #         network_1_folder,
-    #         network_2_folder,
-    #     )
+    distributions_df_list = \
+        compare_distributions(
+            network_1_folder,
+            network_2_folder,
+        )
+    df_list.extend(distributions_df_list)
 
     # compare_sequences(
     #     network_1_folder,
@@ -206,8 +229,8 @@ def compare_stats(
             'distance',
         ]
     )
-    # print(df)
-    df.to_csv(output_file, index=False, float_format='%.4f')
+    print(df)
+    # df.to_csv(output_file, index=False, float_format='%.4f')
 
 
 if __name__ == "__main__":
