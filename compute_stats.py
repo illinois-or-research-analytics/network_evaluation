@@ -280,8 +280,6 @@ def compute_mus(net, clustering_dict, node_mapping_dict_reversed):
     mus = [out_degree[i]/(out_degree[i]+in_degree[i]) if (out_degree[i] +
                                                           in_degree[i]) != 0 else 0 for i in net.iterNodes()]
     return mus
-    # mixing_param = np.mean(mus)
-    # return round(mixing_param, 4)
 
 
 def compute_xi(graph, clustering_dict, node_mapping_dict_reversed):

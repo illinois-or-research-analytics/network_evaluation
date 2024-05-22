@@ -49,11 +49,7 @@ def from_existing_clustering(filepath) -> List[IntangibleSubgraph]:
             clusters.setdefault(
                 cluster_id, IntangibleSubgraph([], cluster_id)
             ).subset.append(int(node_id))
-    # The-Anh: maybe remove val.n() > 1? should get the statistics for everything
-    # irrespective of its size
-    # if the stat requires size > 1 then the stat itself should check it and and
-    # gives warning, we should not filter at this stage
-    return {key: val for key, val in clusters.items() if val.n() > 1}
+    return {key: val for key, val in clusters.items()}
 
 
 def main(

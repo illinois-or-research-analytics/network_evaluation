@@ -8,14 +8,20 @@ import scipy
 import numpy as np
 import pandas as pd
 
-from constants import (
-    NODE_ORDER_FN,
-    COMM_ORDER_FN,
-    OUTLIER_ORDER_FN,
-    NODE_DISTR_STATS,
-    COMM_DISTR_STATS,
-    OUTLIER_DISTR_STATS
-)
+NODE_ORDER_FN = 'node_ordering.idx'
+COMM_ORDER_FN = 'cluster_ordering.idx'
+OUTLIER_ORDER_FN = 'outlier_ordering.idx'
+
+DEGR_DISTR = 'degree'
+O_DEGR_DISTR = 'o_deg'
+CSIZE_DISTR = 'c_size'
+MCS_DIST = 'mincuts'
+O_PART_COEFF_DISTR = 'o_participation_coeffs'
+PART_COEFF_DISTR = 'participation_coeffs'
+
+NODE_DISTR_STATS = [DEGR_DISTR, PART_COEFF_DISTR]
+COMM_DISTR_STATS = [CSIZE_DISTR, MCS_DIST]
+OUTLIER_DISTR_STATS = [O_DEGR_DISTR, O_PART_COEFF_DISTR]
 
 
 def parse_distribution(distribution_path):
@@ -47,7 +53,7 @@ def sequence_distance(input_sequence, replicate_sequence):
     try:
         d = np.linalg.norm(
             input_sequence - replicate_sequence, ord=1)
-        d = d/len(input_sequence)
+        d = d / len(input_sequence)
     except Exception as e:
         print(f"error: {e}")
         d = np.nan
@@ -89,9 +95,9 @@ def compare_scalars(
     relative_diff_dict = {}
     statistical_diff_dict = {}
     for name, input_value in input_scalar_stat_dict.items():
-        #The-Anh: maybe just compute and store the difference and percentage change of each replicate
-        #i.e. (rep_value - input_value) and (rep_value - input_value) / input_value
-        
+        # The-Anh: maybe just compute and store the difference and percentage change of each replicate
+        # i.e. (rep_value - input_value) and (rep_value - input_value) / input_value
+
         current_value_arr = [
             replicates_scalar_stat_dict[replicate_index][name]
             for replicate_index in range(num_replicates)
@@ -328,12 +334,13 @@ def compare_sequences(
             # assert len(df_joined) == len(df_input) and len(
             #     df_joined) == len(df_replicate)
 
-            diff,diff2 = sequence_distance(
+            diff, diff2 = sequence_distance(
                 df_joined['input'].values,
                 df_joined['replicate'].values,
             )
             diff_dict[current_sequence_name][current_replicate_index] = diff
-            diff_dict2[current_sequence_name+"_l2"][current_replicate_index] = diff2
+            diff_dict2[current_sequence_name +
+                       "_l2"][current_replicate_index] = diff2
             print(f"replicate {current_replicate_index}: {diff}")
             print(f"replicate {current_replicate_index}: {diff2}")
 
