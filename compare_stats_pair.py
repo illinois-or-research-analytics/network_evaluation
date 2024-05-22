@@ -287,7 +287,7 @@ def compare_sequences(
     df_lists = [
         [
             name,
-            'distribution',
+            'sequence',
             diff_type,
             diff,
         ]
@@ -298,10 +298,38 @@ def compare_sequences(
 
 
 @ click.command()
-@ click.option("--network-1-folder", required=True, type=click.Path(exists=True), help="Input network stats folder")
-@ click.option("--network-2-folder", required=True, type=click.Path(exists=True), help="Input synthetic stats folder")
-@ click.option("--output-file", required=True, type=click.Path(dir_okay=False, writable=True), help="Ouput folder to save the comparison results")
-@ click.option("--is-compare-sequence", is_flag=True, help="Whether distributions can be treated as sequences (default: False)")
+@ click.option(
+    "--network-1-folder",
+    required=True,
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+    ),
+    help="Input 1st network stats folder",
+)
+@ click.option(
+    "--network-2-folder",
+    required=True,
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+    ),
+    help="Input 2nd network stats folder",
+)
+@ click.option(
+    "--output-file",
+    required=True,
+    type=click.Path(
+        dir_okay=False,
+        writable=True,
+    ),
+    help="Ouput folder to save the comparison results",
+)
+@ click.option(
+    "--is-compare-sequence",
+    is_flag=True,
+    help="Whether to compare between distributions as though they are sequences",
+)
 def compare_stats(
     network_1_folder,
     network_2_folder,
