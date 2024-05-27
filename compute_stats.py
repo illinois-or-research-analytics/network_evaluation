@@ -267,8 +267,8 @@ def compute_mus(net, clustering_dict, node_mapping_dict_reversed):
     in_degree = defaultdict(int)
     out_degree = defaultdict(int)
     for node1, node2 in net.iterEdges():
-        n1 = node_mapping_dict_reversed.get(node1)
-        n2 = node_mapping_dict_reversed.get(node2)
+        n1 = str(node_mapping_dict_reversed.get(node1))
+        n2 = str(node_mapping_dict_reversed.get(node2))
         if n1 not in clustering_dict or n2 not in clustering_dict:
             continue
         if clustering_dict[n1] == clustering_dict[n2]:  # nodes are co-clustered
@@ -290,8 +290,8 @@ def compute_xi(graph, clustering_dict, node_mapping_dict_reversed):
     in_degree = defaultdict(int)
     out_degree = defaultdict(int)
     for node1, node2 in graph.iterEdges():
-        n1 = node_mapping_dict_reversed.get(node1)
-        n2 = node_mapping_dict_reversed.get(node2)
+        n1 = str(node_mapping_dict_reversed.get(node1))
+        n2 = str(node_mapping_dict_reversed.get(node2))
         if n1 not in clustering_dict or n2 not in clustering_dict:
             continue
         if clustering_dict[n1] == clustering_dict[n2]:  # nodes are co-clustered
