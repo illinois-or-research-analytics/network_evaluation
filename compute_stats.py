@@ -111,6 +111,9 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
 
     # S18 number of disconnected clusters
     disconnected_clusters = (
+        cluster_stats['connectivity'] < 1).sum()
+
+    poorly_connected_clusters = (
         cluster_stats['connectivity_normalized_log10(n)'] < 1).sum()
 
     # S19 and S20 mininum cut size distribution - mincut sequence
@@ -179,6 +182,8 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
         stats_dict["mixing_param"] = mixing_param
     if "diameter" not in stats_dict or overwrite:
         stats_dict["diameter"] = diameter
+    if "n_poor_connects" not in stats_dict or overwrite:
+        stats_dict["n_poor_connects"] = int(poorly_connected_clusters)
 
     with stats_file.open("w") as f:
         json.dump(stats_dict, f, indent=4)
