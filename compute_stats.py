@@ -115,6 +115,7 @@ def compute_basic_stats(input_network, input_clustering, output_folder, overwrit
 
     poorly_connected_clusters = (
         cluster_stats['connectivity_normalized_log10(n)'] < 1).sum()
+    poorly_connected_clusters = poorly_connected_clusters - disconnected_clusters
 
     # S19 and S20 mininum cut size distribution - mincut sequence
     mincuts_distr = cluster_stats['connectivity'].values
