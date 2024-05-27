@@ -370,7 +370,7 @@ def compare_stats(
             'distance',
         ]
     )
-    df.to_csv(output_file, index=False, float_format='%.4f')
+    df.to_csv(output_file, index=False)
 
 
 if __name__ == "__main__":
