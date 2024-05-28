@@ -178,20 +178,20 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     # TODO: this has not been implemented
 
     # Getting cluster statistics
-    cluster_stats_path = dir_path / 'cluster_stats.csv'
-    compute_cluster_stats(
-        network_fp=input_network,
-        clustering_fp=input_clustering,
-        output_fp=cluster_stats_path,
-    )
-    # Reading the saved cluster statistics
-    cluster_stats = pd.read_csv(cluster_stats_path)
-    cluster_stats = cluster_stats.drop(cluster_stats.index[-1])
+    cluster_stats = \
+        compute_cluster_stats(
+            input_network,
+            input_clustering,
+            cluster_mapping_dict_reversed,
+            cluster_order,
+        )
+    cluster_stats.to_csv(dir_path / 'cluster_stats.csv', index=False)
 
     n_clusters = len(cluster_stats)
 
     # S10 and S11 - Cluster size distribution
-    cluster_size_distr = compute_cluster_size_distr(clustering_dict)
+    c_n_nodes_distr = cluster_stats['n'].values
+    c_n_edges_distr = cluster_stats['m'].values
 
     # S18 - number of disconnected clusters
     n_disconnected_clusters = \
@@ -261,13 +261,70 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         'osub_degree': osub_deg_distr,
         'o_deg': o_deg_distr,
 
-        'c_size': cluster_size_distr,
+        'c_size': c_n_nodes_distr,
+        'c_edges': c_n_edges_distr,
         'mincuts': mincuts_distr,
         'mixing_mus': mixing_mu_distr,
         'participation_coeffs': participation_coeffs,
         'o_participation_coeffs': o_participation_coeffs_distr,
     }
     save_distr_stats(overwrite, dir_path, distr_stats_dict)
+
+
+def compute_cluster_stats(input_network, input_clustering, cluster_mapping_dict_reversed, cluster_order):
+    clusters = load_clusters(input_clustering)  # {cluster_id: subgraph}
+    edgelist_reader = nk.graphio.EdgeListReader('\t', 0)
+    nk_graph = edgelist_reader.read(input_network)
+    global_graph = Graph(nk_graph, '')
+
+    n_nodes_cluster = [
+        clusters[cluster_mapping_dict_reversed[cluster_id]].n()
+        for cluster_id in cluster_order
+    ]
+
+    n_edges_cluster = [
+        clusters[
+            cluster_mapping_dict_reversed[cluster_id]
+        ].count_edges(global_graph)
+        for cluster_id in cluster_order
+    ]
+
+    clusters = {
+        cluster_id: clusters[
+            cluster_mapping_dict_reversed[cluster_id]
+        ].realize(global_graph)
+        for cluster_id in cluster_order
+    }
+
+    mincuts = [
+        viecut(clusters[cluster_id])[-1]
+        for cluster_id in cluster_order
+    ]
+    mincuts_normalized = [
+        mincut / np.log10(n)
+        for mincut, n in zip(mincuts, n_nodes_cluster)
+    ]
+
+    cluster_stats = pd.DataFrame(
+        list(
+            zip(
+                cluster_order,
+                n_nodes_cluster,
+                n_edges_cluster,
+                mincuts,
+                mincuts_normalized,
+            )
+        ),
+        columns=[
+            'cluster',
+            'n',
+            'm',
+            'connectivity',
+            'connectivity_normalized_log10(n)',
+        ]
+    )
+
+    return cluster_stats
 
 
 def save_distr_stats(overwrite, dir_path, distr_stats_dict):
@@ -495,7 +552,7 @@ def compute_participation_coeff_distr(graph, node_mapping_dict_reversed, cluster
     return participation_coeffs, o_participation_coeffs_distr
 
 
-def load_clusters(filepath) -> List[IntangibleSubgraph]:
+def load_clusters(filepath, cluster_iid2id, cluster_order) -> List[IntangibleSubgraph]:
     clusters: Dict[str, IntangibleSubgraph] = {}
     with open(filepath) as f:
         csv_reader = csv.reader(f, delimiter='\t')
@@ -504,17 +561,19 @@ def load_clusters(filepath) -> List[IntangibleSubgraph]:
             clusters.setdefault(
                 cluster_id, IntangibleSubgraph([], cluster_id)
             ).subset.append(int(node_id))
-    return {key: val for key, val in clusters.items()}
+    return [
+        clusters[cluster_iid2id[cluster_iid]]
+        for cluster_iid in cluster_order
+    ]
 
 
-def compute_cluster_stats(
-    network_fp: str,
-    clustering_fp: str,
-    output_fp: str,
-):
-    outfile = output_fp
-
-    clusters = load_clusters(clustering_fp).values()
+def compute_cluster_stats(network_fp, clustering_fp, cluster_iid2id, cluster_order):
+    clusters = \
+        load_clusters(
+            clustering_fp,
+            cluster_iid2id,
+            cluster_order,
+        )
     ids = [
         cluster.index
         for cluster in clusters
@@ -566,14 +625,14 @@ def compute_cluster_stats(
     #     for cluster in clusters
     # ]
 
-    m = global_graph.m()
-    ids.append("Overall")
+    # m = global_graph.m()
+    # ids.append("Overall")
     # modularities.append(sum(modularities))
 
-    ns.append(global_graph.n())
-    ms.append(m)
-    mincuts.append(None)
-    mincuts_normalized.append(None)
+    # ns.append(global_graph.n())
+    # ms.append(m)
+    # mincuts.append(None)
+    # mincuts_normalized.append(None)
     # mincuts_normalized_log2.append(None)
     # mincuts_normalized_sqrt.append(None)
     # conductances.append(None)
@@ -604,7 +663,8 @@ def compute_cluster_stats(
             # 'conductance',
         ]
     )
-    df.to_csv(outfile, index=False)
+
+    return df
 
 
 if __name__ == '__main__':
