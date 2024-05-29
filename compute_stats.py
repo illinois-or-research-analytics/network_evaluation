@@ -582,7 +582,7 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
 def compute_diameter(graph):
     connected_graph = \
         nk.components.ConnectedComponents.extractLargestConnectedComponent(
-            graph, False)
+            graph, True)
     diam = nk.distance.Diameter(connected_graph, algo=1)
     diam.run()
     diameter = diam.getDiameter()
