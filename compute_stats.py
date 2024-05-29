@@ -15,7 +15,6 @@ from hm01.mincut import viecut
 
 import time
 import logging
-from scipy.sparse import dok_matrix
 import psutil
 import os
 
@@ -285,16 +284,11 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     start_time = time.time()
 
     # S22 - mixing parameter
-    mixing_mu_distr = compute_mu_distr(
+    mixing_mu_distr, mixing_xi = compute_mixing_params(
         graph,
         clustering_dict,
         node_mapping_dict_reversed,
         node_order,
-    )
-    mixing_xi = compute_xi(
-        graph,
-        clustering_dict,
-        node_mapping_dict_reversed,
     )
 
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
@@ -305,13 +299,13 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     logging.info("Stats - S24!")
     start_time = time.time()
 
-    participation_coeffs, o_participation_coeffs_distr = \
+    participation_coeffs_distr, o_participation_coeffs_distr = \
         compute_participation_coeff_distr(
             graph,
             node_mapping_dict_reversed,
             clustering_dict,
             node_order,
-            outlier_order,
+            outlier_order
         )
 
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
@@ -360,7 +354,7 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         'c_edges': c_n_edges_distr,
         'mincuts': mincuts_distr,
         'mixing_mus': mixing_mu_distr,
-        'participation_coeffs': participation_coeffs,
+        'participation_coeffs': participation_coeffs_distr,
         'o_participation_coeffs': o_participation_coeffs_distr,
     }
     save_distr_stats(overwrite, dir_path, distr_stats_dict)
@@ -558,7 +552,7 @@ def compute_cluster_size_distr(clustering_dict):
     return cluster_size_distr
 
 
-def compute_mu_distr(graph, clustering_dict, node_mapping_dict_reversed, node_order):
+def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, node_order):
     in_degree = defaultdict(int)
     out_degree = defaultdict(int)
     for node1, node2 in graph.iterEdges():
@@ -578,31 +572,17 @@ def compute_mu_distr(graph, clustering_dict, node_mapping_dict_reversed, node_or
         else 0
         for i in node_order
     ]
-    return mus
 
-
-def compute_xi(graph, clustering_dict, node_mapping_dict_reversed):
-    in_degree = defaultdict(int)
-    out_degree = defaultdict(int)
-    for node1, node2 in graph.iterEdges():
-        n1 = str(node_mapping_dict_reversed.get(node1))
-        n2 = str(node_mapping_dict_reversed.get(node2))
-        if n1 not in clustering_dict or n2 not in clustering_dict:
-            continue
-        if clustering_dict[n1] == clustering_dict[n2]:  # nodes are co-clustered
-            in_degree[node1] += 1
-            in_degree[node2] += 1
-        else:
-            out_degree[node1] += 1
-            out_degree[node2] += 1
     outs = [out_degree[i] for i in graph.iterNodes()]
     xi = np.sum(outs) / 2 / (graph.numberOfEdges())
-    return xi
+
+    return mus, xi
 
 
 def compute_diameter(graph):
-    connected_graph = nk.components.ConnectedComponents.extractLargestConnectedComponent(
-        graph, True)
+    connected_graph = \
+        nk.components.ConnectedComponents.extractLargestConnectedComponent(
+            graph, False)
     diam = nk.distance.Diameter(connected_graph, algo=1)
     diam.run()
     diameter = diam.getDiameter()
@@ -632,8 +612,7 @@ def compute_participation_coeff_distr(graph, node_mapping_dict_reversed, cluster
             node_mapping_dict_reversed,
         )
 
-    participation_coeffs = []
-    outlier_participation_coeffs = {}
+    participation_coeffs = {}
     for node in node_order:
         participation = participation_dict[node]
         deg_of_node = sum(participation.values())
@@ -649,16 +628,17 @@ def compute_participation_coeff_distr(graph, node_mapping_dict_reversed, cluster
                 coeff += (participation[-1] / deg_of_node) ** 2
                 coeff -= participation[-1] * ((1 / deg_of_node) ** 2)
 
-        participation_coeffs.append(coeff)
-        if node in outlier_order:
-            outlier_participation_coeffs[node] = coeff
+    participation_coeffs_distr = [
+        participation_coeffs.get(v)
+        for v in node_order
+    ]
 
     o_participation_coeffs_distr = [
-        outlier_participation_coeffs.get(v)
+        participation_coeffs.get(v)
         for v in outlier_order
     ]
 
-    return participation_coeffs, o_participation_coeffs_distr
+    return participation_coeffs_distr, o_participation_coeffs_distr
 
 
 def load_clusters(filepath, cluster_iid2id, cluster_order) -> List[IntangibleSubgraph]:
