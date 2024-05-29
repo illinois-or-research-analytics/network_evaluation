@@ -300,13 +300,13 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     logging.info("Stats - S24!")
     start_time = time.time()
 
-    participation_coeffs, o_participation_coeffs_distr = \
+    participation_coeffs_distr, o_participation_coeffs_distr = \
         compute_participation_coeff_distr(
             graph,
             node_mapping_dict_reversed,
             clustering_dict,
             node_order,
-            outlier_order,
+            outlier_order
         )
 
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
@@ -355,7 +355,7 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         'c_edges': c_n_edges_distr,
         'mincuts': mincuts_distr,
         'mixing_mus': mixing_mu_distr,
-        'participation_coeffs': participation_coeffs,
+        'participation_coeffs': participation_coeffs_distr,
         'o_participation_coeffs': o_participation_coeffs_distr,
     }
     save_distr_stats(overwrite, dir_path, distr_stats_dict)
@@ -622,8 +622,7 @@ def compute_participation_coeff_distr(graph, node_mapping_dict_reversed, cluster
             node_mapping_dict_reversed,
         )
 
-    participation_coeffs = []
-    outlier_participation_coeffs = {}
+    participation_coeffs = {}
     for node in node_order:
         participation = participation_dict[node]
         deg_of_node = sum(participation.values())
@@ -639,16 +638,19 @@ def compute_participation_coeff_distr(graph, node_mapping_dict_reversed, cluster
                 coeff += (participation[-1] / deg_of_node) ** 2
                 coeff -= participation[-1] * ((1 / deg_of_node) ** 2)
 
-        participation_coeffs.append(coeff)
-        if node in outlier_order:
-            outlier_participation_coeffs[node] = coeff
+        participation_coeffs[node] = round(coeff,5)
+
+    participation_coeffs_distr = [
+        participation_coeffs.get(v)
+        for v in node_order
+    ]
 
     o_participation_coeffs_distr = [
-        outlier_participation_coeffs.get(v)
+        participation_coeffs.get(v)
         for v in outlier_order
     ]
 
-    return participation_coeffs, o_participation_coeffs_distr
+    return participation_coeffs_distr, o_participation_coeffs_distr
 
 
 def load_clusters(filepath, cluster_iid2id, cluster_order) -> List[IntangibleSubgraph]:
