@@ -28,8 +28,8 @@ OUTLIER_DISTR_STATS = [O_DEGR_DISTR, O_PART_COEFF_DISTR]
 def parse_distribution(distribution_path):
     distribution_arr = []
     with open(distribution_path, "r") as f:
-        for line in f:
-            distribution_arr.append(float(line))
+        df = pd.read_csv(f, header=None)
+        distribution_arr = df[0].values
     return distribution_arr
 
 
@@ -131,15 +131,23 @@ def compare_distributions(
         glob.glob(f"{network_1_folder}/*.distribution")
     network_1_stats = dict()
     for fn in network_1_fns:
-        name = Path(fn).stem
-        network_1_stats[name] = parse_distribution(fn)
+        try:
+            name = Path(fn).stem
+            network_1_stats[name] = parse_distribution(fn)
+        except Exception as e:
+            print(f"[ERROR] ({name}) {e}")
+            network_1_stats[name] = []
 
     network_2_fns = \
         glob.glob(f"{network_2_folder}/*.distribution")
     network_2_stats = dict()
     for fn in network_2_fns:
-        name = Path(fn).stem
-        network_2_stats[name] = parse_distribution(fn)
+        try:
+            name = Path(fn).stem
+            network_2_stats[name] = parse_distribution(fn)
+        except Exception as e:
+            print(f"[ERROR] ({name}) {e}")
+            network_2_stats[name] = []
 
     common_stats = set(
         network_1_stats.keys()
@@ -161,7 +169,7 @@ def compare_distributions(
                     dist_type,
                 )
             except Exception as e:
-                print(f"[ERROR] ({dist_type}) {e}")
+                print(f"[ERROR] ({name}) ({dist_type}) {e}")
                 diff = np.nan
 
             diff_dict[name][dist_type] = diff
@@ -187,8 +195,12 @@ def compare_sequences(
         glob.glob(f"{network_1_folder}/*.distribution")
     network_1_stats = dict()
     for fn in network_1_fns:
-        name = Path(fn).stem
-        network_1_stats[name] = parse_distribution(fn)
+        try:
+            name = Path(fn).stem
+            network_1_stats[name] = parse_distribution(fn)
+        except Exception as e:
+            print(f"[ERROR] ({name}) {e}")
+            network_1_stats[name] = []
 
     network_1_ids = {
         'node':
@@ -212,8 +224,12 @@ def compare_sequences(
         glob.glob(f"{network_2_folder}/*.distribution")
     network_2_stats = dict()
     for fn in network_2_fns:
-        name = Path(fn).stem
-        network_2_stats[name] = parse_distribution(fn)
+        try:
+            name = Path(fn).stem
+            network_2_stats[name] = parse_distribution(fn)
+        except Exception as e:
+            print(f"[ERROR] ({name}) {e}")
+            network_2_stats[name] = []
 
     network_2_ids = {
         'node':
