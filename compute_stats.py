@@ -15,7 +15,6 @@ from hm01.mincut import viecut
 
 import time
 import logging
-from scipy.sparse import dok_matrix
 import psutil
 import os
 
@@ -581,21 +580,12 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
 
 
 def compute_diameter(graph):
-    start = time.time()
     connected_graph = \
         nk.components.ConnectedComponents.extractLargestConnectedComponent(
-            graph, True)
-    print(f"Time taken to extract largest connected component: {
-          time.time() - start}")
-    print(connected_graph.numberOfNodes())
-    print(connected_graph.numberOfEdges())
-
-    start = time.time()
+            graph, False)
     diam = nk.distance.Diameter(connected_graph, algo=1)
     diam.run()
     diameter = diam.getDiameter()
-    print(f"Time taken to compute diameter: {time.time() - start}")
-
     return diameter[0]
 
 
@@ -637,8 +627,6 @@ def compute_participation_coeff_distr(graph, node_mapping_dict_reversed, cluster
             if -1 in participation.keys():
                 coeff += (participation[-1] / deg_of_node) ** 2
                 coeff -= participation[-1] * ((1 / deg_of_node) ** 2)
-
-        participation_coeffs[node] = round(coeff,5)
 
     participation_coeffs_distr = [
         participation_coeffs.get(v)
