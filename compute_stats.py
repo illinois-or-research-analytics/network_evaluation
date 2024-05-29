@@ -52,8 +52,17 @@ STATS_LOG_FILENAME = 'stats_log.log'
     help='Whether to overwrite existing data',
 )
 def compute_stats(input_network, input_clustering, output_folder, overwrite):
-    #Start logging 
-    logging.basicConfig(filename=os.path.join(output_folder,STATS_LOG_FILENAME), filemode='w', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    # Prepare output folder
+    dir_path = Path(output_folder)
+    dir_path.mkdir(parents=True, exist_ok=True)
+
+    # Start logging
+    logging.basicConfig(
+        filename=os.path.join(output_folder, STATS_LOG_FILENAME),
+        filemode='w',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
     console = logging.StreamHandler()
     console.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -77,10 +86,6 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
     log_cpu_ram_usage("After reading network!")
 
-    # Prepare output folder
-    dir_path = Path(output_folder)
-    dir_path.mkdir(parents=True, exist_ok=True)
-
     # id is the real id (str), iid is the internal id (int)
 
     # Generate the node mapping
@@ -94,7 +99,6 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     # node_mapping_dict: {node_id: node_iid}
     # node_mapping_dict_reversed: {node_iid: node_id}
     node_order = list(graph.iterNodes())  # list of node_iids
-
 
     # Generate the node ordering
     with open(dir_path / NODE_ORDERING_IDX_FILENAME, 'w') as idx_f:
@@ -167,28 +171,28 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     # S3 and S4 - number of connected components and connected components size distribution
     n_concomp, concomp_sizes_distr = get_cc_stats(graph)
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S3 and S4!")
+    log_cpu_ram_usage("After connected components!")
 
     logging.info("Stats - S5!")
     start_time = time.time()
     # S5 - degree assortativity
     deg_assort = compute_deg_assort(graph)
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S5!")
+    log_cpu_ram_usage("After degree assortativity!")
 
     logging.info("Stats - S6!")
     start_time = time.time()
     # S6 - Global Clustering Coefficient
     global_ccoeff = compute_global_ccoeff(graph)
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S6!")
+    log_cpu_ram_usage("After global clustering coefficient!")
 
     logging.info("Stats - S8 and S9!")
     start_time = time.time()
     # S8 and S9 - degree distribution, degree sequence
     deg_distr = compute_deg_distr(graph, node_order)
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S8 and S9!")
+    log_cpu_ram_usage("After degree distribution!")
 
     # TODO: S12?
 
@@ -197,7 +201,7 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     # S21 - diameter
     diameter = compute_diameter(graph)
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S21!")
+    log_cpu_ram_usage("After diameter!")
 
     # S23 - Jaccard similarity
     # TODO: this has not been implemented
@@ -213,8 +217,6 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     # S15 number of edges between outlier and non-outlier nodes
     o_no_edges = n_edges - o_o_edges - c_subgraph.numberOfEdges()
 
-    
-
     # S16 degree distribution for the outlier node subgraph
     osub_deg_distr = [
         o_subgraph.degree(u)
@@ -229,7 +231,7 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     ]
 
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S13 - S16!")
+    log_cpu_ram_usage("After outlier stats!")
 
     # S17 degree distribution for edges that connect outlier nodes to non-outlier nodes
     # TODO: Should this distribution include outlier-outlier edges?
@@ -249,16 +251,18 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         )
     cluster_stats.to_csv(dir_path / 'cluster_stats.csv', index=False)
 
-    n_clusters = len(cluster_stats)
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After Cluster Stats!")
+    log_cpu_ram_usage("After minimum cut!")
+
+    n_clusters = len(cluster_stats)
 
     # S10 and S11 - Cluster size distribution
 
-    logging.info("Stats - S10 - S11 and S19 - S22!")
-    start_time = time.time()
     c_n_nodes_distr = cluster_stats['n'].values
     c_n_edges_distr = cluster_stats['m'].values
+
+    logging.info("Stats - S18!")
+    start_time = time.time()
 
     # S18 - number of disconnected clusters
     n_disconnected_clusters = \
@@ -271,24 +275,25 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     ratio_wellconnected_clusters = \
         n_wellconnected_clusters / n_clusters
 
+    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
+    log_cpu_ram_usage("After connectivity!")
+
     # S19 and S20 - mininum cut size distribution, mincut sequence
     mincuts_distr = cluster_stats['connectivity'].values
 
+    logging.info("Stats - S22!")
+    start_time = time.time()
+
     # S22 - mixing parameter
-    mixing_mu_distr = compute_mu_distr(
+    mixing_mu_distr, mixing_xi = compute_mixing_params(
         graph,
         clustering_dict,
         node_mapping_dict_reversed,
         node_order,
     )
-    mixing_xi = compute_xi(
-        graph,
-        clustering_dict,
-        node_mapping_dict_reversed,
-    )
 
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S10 - S11 and S19 - S22!")
+    log_cpu_ram_usage("After mixing parameters!")
 
     # S24 - Participation coefficient distribution
     # TODO: test this
@@ -305,9 +310,7 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         )
 
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S24!")
-
-
+    log_cpu_ram_usage("After participation coefficients!")
 
     # Save scalar statistics
     logging.info("Saving Scalar Stats!")
@@ -359,14 +362,17 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
     log_cpu_ram_usage("After Distribution scalar stats!")
 
-    logging.info(f"Total Time taken: {round(time.time() - job_start_time, 3)} seconds")
+    logging.info(f"Total Time taken: {round(
+        time.time() - job_start_time, 3)} seconds")
     log_cpu_ram_usage("Usage statistics after job completion!")
 
+
 def log_cpu_ram_usage(step_name):
-        cpu_percent = psutil.cpu_percent()
-        ram_percent = psutil.virtual_memory().percent
-        disk_percent = psutil.disk_usage('/').percent
-        logging.info(f"Step: {step_name} | CPU Usage: {cpu_percent}% | RAM Usage: {ram_percent}% | Disk Usage: {disk_percent}")
+    cpu_percent = psutil.cpu_percent()
+    ram_percent = psutil.virtual_memory().percent
+    disk_percent = psutil.disk_usage('/').percent
+    logging.info(f"Step: {step_name} | CPU Usage: {cpu_percent}% | RAM Usage: {
+                 ram_percent}% | Disk Usage: {disk_percent}")
 
 
 def compute_cluster_stats(input_network, input_clustering, cluster_mapping_dict_reversed, cluster_order):
@@ -547,7 +553,7 @@ def compute_cluster_size_distr(clustering_dict):
     return cluster_size_distr
 
 
-def compute_mu_distr(graph, clustering_dict, node_mapping_dict_reversed, node_order):
+def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, node_order):
     in_degree = defaultdict(int)
     out_degree = defaultdict(int)
     for node1, node2 in graph.iterEdges():
@@ -567,34 +573,29 @@ def compute_mu_distr(graph, clustering_dict, node_mapping_dict_reversed, node_or
         else 0
         for i in node_order
     ]
-    return mus
 
-
-def compute_xi(graph, clustering_dict, node_mapping_dict_reversed):
-    in_degree = defaultdict(int)
-    out_degree = defaultdict(int)
-    for node1, node2 in graph.iterEdges():
-        n1 = str(node_mapping_dict_reversed.get(node1))
-        n2 = str(node_mapping_dict_reversed.get(node2))
-        if n1 not in clustering_dict or n2 not in clustering_dict:
-            continue
-        if clustering_dict[n1] == clustering_dict[n2]:  # nodes are co-clustered
-            in_degree[node1] += 1
-            in_degree[node2] += 1
-        else:
-            out_degree[node1] += 1
-            out_degree[node2] += 1
     outs = [out_degree[i] for i in graph.iterNodes()]
     xi = np.sum(outs) / 2 / (graph.numberOfEdges())
-    return xi
+
+    return mus, xi
 
 
 def compute_diameter(graph):
-    connected_graph = nk.components.ConnectedComponents.extractLargestConnectedComponent(
-        graph, True)
+    start = time.time()
+    connected_graph = \
+        nk.components.ConnectedComponents.extractLargestConnectedComponent(
+            graph, True)
+    print(f"Time taken to extract largest connected component: {
+          time.time() - start}")
+    print(connected_graph.numberOfNodes())
+    print(connected_graph.numberOfEdges())
+
+    start = time.time()
     diam = nk.distance.Diameter(connected_graph, algo=1)
     diam.run()
     diameter = diam.getDiameter()
+    print(f"Time taken to compute diameter: {time.time() - start}")
+
     return diameter[0]
 
 
