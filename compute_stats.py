@@ -628,7 +628,7 @@ def compute_participation_coeff_distr(graph, node_mapping_dict_reversed, cluster
                 coeff += (participation[-1] / deg_of_node) ** 2
                 coeff -= participation[-1] * ((1 / deg_of_node) ** 2)
 
-            participation_coeffs_distr[node] = coeff
+            participation_coeffs[node] = coeff
     participation_coeffs_distr = [
         participation_coeffs[v]
         for v in node_order
