@@ -31,6 +31,7 @@ SCALAR_STATS = {
     'n_concomp',
     'deg_assort',
     'global_ccoeff',
+    'local_ccoeff',
     'diameter',
 
     'n_onodes',
@@ -261,6 +262,14 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     if 'global_ccoeff' in stats_to_compute:
         global_ccoeff = compute_global_ccoeff(graph)
         scalar_stats['global_ccoeff'] = global_ccoeff
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
+
+    # S7 - Avg Local Clustering Coefficient
+    logging.info('Stats - Avg Local clustering coefficient')
+    start_time = time.perf_counter()
+    if 'local_ccoeff' in stats_to_compute:
+        local_ccoeff = compute_local_ccoeff(graph)
+        scalar_stats['local_ccoeff'] = local_ccoeff
     logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S8 and S9 - degree distribution
@@ -520,6 +529,9 @@ def compute_n_nodes(graph):
 
 def compute_global_ccoeff(graph):
     return nk.globals.ClusteringCoefficient.exactGlobal(graph)
+
+def compute_local_ccoeff(graph):
+    return nk.globals.ClusteringCoefficient.sequentialAvgLocal(graph)
 
 
 def compute_deg_assort(graph):
