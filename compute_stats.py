@@ -25,24 +25,68 @@ OUTLIER_ORDERING_IDX_FILENAME = 'outlier_ordering.idx'
 OUTLIERS_TSV_FILENAME = 'outliers.tsv'
 STATS_LOG_FILENAME = 'stats_log.log'
 
+SCALAR_STATS = {
+    'n_nodes',
+    'n_edges',
+    'n_concomp',
+    'deg_assort',
+    'global_ccoeff',
+    'diameter',
+
+    'n_onodes',
+    'o_o_edges',
+    'o_no_edges',
+
+    'n_clusters',
+    'n_disconnects',
+    'ratio_disconnected_clusters',
+    'n_wellconnected_clusters',
+    'ratio_wellconnected_clusters',
+    'mixing_xi',
+}
+
+DISTR_STATS = {
+    'degree',
+    'concomp_sizes',
+
+    'osub_degree',
+    'o_deg',
+
+    'c_size',
+    'c_edges',
+    'mincuts',
+    'mixing_mus',
+    'participation_coeffs',
+
+    'o_participation_coeffs',
+}
+
 
 @click.command()
 @click.option(
     '--input-network',
     required=True,
-    type=click.Path(exists=True),
+    type=click.Path(
+        exists=True,
+        dir_okay=False,
+    ),
     help='Input network',
 )
 @click.option(
     '--input-clustering',
     required=True,
-    type=click.Path(exists=True),
+    type=click.Path(
+        exists=True,
+        dir_okay=False,
+    ),
     help='Input clustering',
 )
 @click.option(
     '--output-folder',
     required=True,
-    type=click.Path(),
+    type=click.Path(
+        file_okay=False,
+    ),
     help='Ouput folder',
 )
 @click.option(
@@ -51,28 +95,42 @@ STATS_LOG_FILENAME = 'stats_log.log'
     help='Whether to overwrite existing data',
 )
 def compute_stats(input_network, input_clustering, output_folder, overwrite):
+    # TODO: globally caching some intermediate results
+    # TODO: refactor by abstracting the statistics
+    # TODO: better profile memory and CPU usage
+
     # Prepare output folder
     dir_path = Path(output_folder)
     dir_path.mkdir(parents=True, exist_ok=True)
 
+    # Prepare agenda
+    stats_to_compute = SCALAR_STATS | DISTR_STATS
+
+    if not overwrite:
+        existing_scalar_stats_file = dir_path / STATS_JSON_FILENAME
+        existing_scalar_stats_dict = {}
+        if existing_scalar_stats_file.is_file():
+            with existing_scalar_stats_file.open('r') as f:
+                existing_scalar_stats_dict = json.load(f)
+        stats_to_compute -= set(existing_scalar_stats_dict.keys())
+
+        existing_distr_stats_files = dir_path.glob('*.distribution')
+        existing_distr_stats_names = [
+            Path(existing_distr_stats_file).stem
+            for existing_distr_stats_file in existing_distr_stats_files
+        ]
+        stats_to_compute -= set(existing_distr_stats_names)
+
+    scalar_stats = {}
+    distr_stats = {}
+
     # Start logging
-    logging.basicConfig(
-        filename=os.path.join(output_folder, STATS_LOG_FILENAME),
-        filemode='w',
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    console.setFormatter(formatter)
-    logging.getLogger('').addHandler(console)
-    job_start_time = time.time()
+    prepare_logging(dir_path, overwrite)
+    job_start_time = time.perf_counter()
 
     # Read the network
-    log_cpu_ram_usage("Start")
-    logging.info("Reading input network!")
-    start_time = time.time()
+    logging.info('Reading input network')
+    start_time = time.perf_counter()
     elr = nk.graphio.EdgeListReader(
         '\t',
         0,
@@ -82,14 +140,12 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
     graph = elr.read(input_network)
     graph.removeMultiEdges()
     graph.removeSelfLoops()
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After reading network!")
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    # id is the real id (str), iid is the internal id (int)
+    logging.info('Generating node mapping and ordering.')
+    start_time = time.perf_counter()
 
     # Generate the node mapping
-    logging.info("Generating mappings and orderings.")
-    start_time = time.time()
     node_mapping_dict = elr.getNodeMap()
     node_mapping_dict_reversed = {
         v: k
@@ -107,6 +163,11 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         ]
         df = pd.DataFrame(node_ordering_idx_list)
         df.to_csv(idx_f, sep='\t', header=False, index=False)
+
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
+
+    logging.info('Generating cluster mapping and ordering.')
+    start_time = time.perf_counter()
 
     # Generate the cluster mapping
     clustering_dict, cluster_mapping_dict = read_clustering(input_clustering)
@@ -128,6 +189,11 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         df = pd.DataFrame(cluster_ordering_idx_list)
         df.to_csv(idx_f, sep='\t', header=False, index=False)
 
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
+
+    logging.info('Generating outlier ordering.')
+    start_time = time.perf_counter()
+
     # Generate the outlier ordering
     outlier_nodes, clustered_nodes = \
         get_outliers(graph, node_mapping_dict, clustering_dict)
@@ -141,297 +207,276 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         df = pd.DataFrame(outlier_ordering_idx_list)
         df.to_csv(idx_f, sep='\t', header=False, index=False)
 
-    with open(dir_path / OUTLIERS_TSV_FILENAME, 'w') as idx_f:
-        outlier_tsv_list = [
-            [node]
-            for node in outlier_nodes
-        ]
-        df = pd.DataFrame(outlier_tsv_list)
-        df.to_csv(idx_f, sep='\t', header=False, index=False)
+    # with open(dir_path / OUTLIERS_TSV_FILENAME, 'w') as idx_f:
+    #     outlier_tsv_list = [
+    #         [node]
+    #         for node in outlier_nodes
+    #     ]
+    #     df = pd.DataFrame(outlier_tsv_list)
+    #     df.to_csv(idx_f, sep='\t', header=False, index=False)
 
     o_subgraph = nk.graphtools.subgraphFromNodes(graph, outlier_nodes)
     c_subgraph = nk.graphtools.subgraphFromNodes(graph, clustered_nodes)
 
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After generating orderings and mapping!")
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    logging.info("Stats - Number of nodes and edges!")
-    start_time = time.time()
     # S1 - number of nodes
-    n_nodes = compute_n_nodes(graph)
+    logging.info('Stats - Number of nodes')
+    start_time = time.perf_counter()
+    if 'n_nodes' in stats_to_compute:
+        n_nodes = compute_n_nodes(graph)
+        scalar_stats['n_nodes'] = n_nodes
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S2 - number of edges
-    n_edges = compute_n_edges(graph)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After S1 and S2!")
+    logging.info('Stats - Number of edges')
+    start_time = time.perf_counter()
+    if 'n_edges' in stats_to_compute:
+        n_edges = compute_n_edges(graph)
+        scalar_stats['n_edges'] = n_edges
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    logging.info("Stats - S3 and S4!")
-    start_time = time.time()
     # S3 and S4 - number of connected components and connected components size distribution
-    n_concomp, concomp_sizes_distr = get_cc_stats(graph)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After connected components!")
+    logging.info(
+        'Stats - Number of connected components and connected components size distribution'
+    )
+    start_time = time.perf_counter()
+    if 'n_concomp' in stats_to_compute or 'concomp_sizes' in stats_to_compute:
+        n_concomp, concomp_sizes_distr = get_cc_stats(graph)
+        scalar_stats['n_concomp'] = n_concomp
+        distr_stats['concomp_sizes'] = concomp_sizes_distr
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    logging.info("Stats - S5!")
-    start_time = time.time()
     # S5 - degree assortativity
-    deg_assort = compute_deg_assort(graph)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After degree assortativity!")
+    logging.info('Stats - Degree assortativity')
+    start_time = time.perf_counter()
+    if 'deg_assort' in stats_to_compute:
+        deg_assort = compute_deg_assort(graph)
+        scalar_stats['deg_assort'] = deg_assort
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    logging.info("Stats - S6!")
-    start_time = time.time()
     # S6 - Global Clustering Coefficient
-    global_ccoeff = compute_global_ccoeff(graph)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After global clustering coefficient!")
+    logging.info('Stats - Global clustering coefficient')
+    start_time = time.perf_counter()
+    if 'global_ccoeff' in stats_to_compute:
+        global_ccoeff = compute_global_ccoeff(graph)
+        scalar_stats['global_ccoeff'] = global_ccoeff
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    logging.info("Stats - S8 and S9!")
-    start_time = time.time()
-    # S8 and S9 - degree distribution, degree sequence
-    deg_distr = compute_deg_distr(graph, node_order)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After degree distribution!")
+    # S8 and S9 - degree distribution
+    logging.info('Stats - Degree distribution')
+    start_time = time.perf_counter()
+    if 'degree' in stats_to_compute:
+        deg_distr = compute_deg_distr(graph, node_order)
+        distr_stats['degree'] = deg_distr
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # TODO: S12?
 
-    logging.info("Stats - S21")
-    start_time = time.time()
     # S21 - diameter
-    diameter = compute_diameter(graph)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After diameter!")
+    logging.info('Stats - Diameter')
+    start_time = time.perf_counter()
+    if 'diameter' in stats_to_compute:
+        diameter = compute_diameter(graph)
+        scalar_stats['diameter'] = diameter
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S23 - Jaccard similarity
     # TODO: this has not been implemented
 
-    logging.info("Stats - S13 - S16!")
-    start_time = time.time()
-    # S13 number of outliers
-    n_onodes = len(outlier_nodes)
+    # S13 - number of outliers
+    logging.info('Stats - Number of outliers')
+    start_time = time.perf_counter()
+    if 'n_onodes' in stats_to_compute:
+        n_onodes = len(outlier_nodes)
+        scalar_stats['n_onodes'] = n_onodes
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S14 number of edges among outliers nodes
-    o_o_edges = o_subgraph.numberOfEdges()
+    logging.info('Stats - Number of edges between outliers')
+    start_time = time.perf_counter()
+    if 'o_o_edges' in stats_to_compute:
+        o_o_edges = o_subgraph.numberOfEdges()
+        scalar_stats['o_o_edges'] = o_o_edges
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S15 number of edges between outlier and non-outlier nodes
-    o_no_edges = n_edges - o_o_edges - c_subgraph.numberOfEdges()
+    logging.info('Stats - Number of edges between outliers and non-outliers')
+    start_time = time.perf_counter()
+    if 'o_no_edges' in stats_to_compute:
+        o_no_edges = n_edges - o_o_edges - c_subgraph.numberOfEdges()
+        scalar_stats['o_no_edges'] = o_no_edges
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S16 degree distribution for the outlier node subgraph
-    osub_deg_distr = [
-        o_subgraph.degree(u)
-        for u in outlier_order
-    ]
+    logging.info('Stats - Degree distribution for outlier node subgraph')
+    start_time = time.perf_counter()
+    if 'osub_degree' in stats_to_compute:
+        osub_deg_distr = [
+            o_subgraph.degree(u)
+            for u in outlier_order
+        ]
+        distr_stats['osub_degree'] = osub_deg_distr
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # TODO: any S?
     # outlier degree distribution
-    o_deg_distr = [
-        graph.degree(u)
-        for u in outlier_order
-    ]
-
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After outlier stats!")
+    logging.info('Stats - Degree distribution of the outliers')
+    start_time = time.perf_counter()
+    if 'o_deg' in stats_to_compute:
+        o_deg_distr = [
+            graph.degree(u)
+            for u in outlier_order
+        ]
+        distr_stats['o_deg'] = o_deg_distr
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S17 degree distribution for edges that connect outlier nodes to non-outlier nodes
     # TODO: Should this distribution include outlier-outlier edges?
     # TODO: this has not been implemented
 
-    # Getting cluster statistics
+    logging.info('Stats - Cluster stats')
+    start_time = time.perf_counter()
+    # TODO: break this into smaller parts
+    if 'mincuts' in stats_to_compute \
+            or 'n_clusters' in stats_to_compute \
+            or 'c_size' in stats_to_compute \
+            or 'c_edges' in stats_to_compute \
+            or 'n_disconnects' in stats_to_compute \
+            or 'ratio_disconnected_clusters' in stats_to_compute \
+            or 'n_wellconnected_clusters' in stats_to_compute \
+            or 'ratio_wellconnected_clusters' in stats_to_compute:
+        cluster_stats = \
+            compute_cluster_stats(
+                input_network,
+                input_clustering,
+                cluster_mapping_dict_reversed,
+                cluster_order,
+            )
+        cluster_stats.to_csv(dir_path / 'cluster_stats.csv', index=False)
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    logging.info("Stats - Cluster stats!")
-    start_time = time.time()
+    # S19 and S20 - mininum cut size
+    logging.info('Stats - Minimum cut size distribution')
+    start_time = time.perf_counter()
+    if 'mincuts' in stats_to_compute:
+        mincuts_distr = cluster_stats['connectivity'].values
+        distr_stats['mincuts'] = mincuts_distr
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    cluster_stats = \
-        compute_cluster_stats(
-            input_network,
-            input_clustering,
-            cluster_mapping_dict_reversed,
-            cluster_order,
-        )
-    cluster_stats.to_csv(dir_path / 'cluster_stats.csv', index=False)
-
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After minimum cut!")
-
-    n_clusters = len(cluster_stats)
+    logging.info('Stats - Number of clusters')
+    start_time = time.perf_counter()
+    if 'n_clusters' in stats_to_compute:
+        n_clusters = len(cluster_stats)
+        scalar_stats['n_clusters'] = n_clusters
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S10 and S11 - Cluster size distribution
-
-    c_n_nodes_distr = cluster_stats['n'].values
-    c_n_edges_distr = cluster_stats['m'].values
-
-    logging.info("Stats - S18!")
-    start_time = time.time()
+    logging.info('Stats - Cluster size distribution')
+    start_time = time.perf_counter()
+    if 'c_size' in stats_to_compute or 'c_edges' in stats_to_compute:
+        c_n_nodes_distr = cluster_stats['n'].values
+        c_n_edges_distr = cluster_stats['m'].values
+        distr_stats['c_size'] = c_n_nodes_distr
+        distr_stats['c_edges'] = c_n_edges_distr
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S18 - number of disconnected clusters
-    n_disconnected_clusters = \
-        int((cluster_stats['connectivity'] < 1).sum())
-    ratio_disconnected_clusters = \
-        n_disconnected_clusters / n_clusters
-
-    n_wellconnected_clusters = \
-        int((cluster_stats['connectivity_normalized_log10(n)'] > 1).sum())
-    ratio_wellconnected_clusters = \
-        n_wellconnected_clusters / n_clusters
-
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After connectivity!")
-
-    # S19 and S20 - mininum cut size distribution, mincut sequence
-    mincuts_distr = cluster_stats['connectivity'].values
-
-    logging.info("Stats - S22!")
-    start_time = time.time()
+    logging.info('Stats - Connectivity')
+    start_time = time.perf_counter()
+    if 'n_disconnects' in stats_to_compute \
+            or 'ratio_disconnected_clusters' in stats_to_compute \
+            or 'n_wellconnected_clusters' in stats_to_compute \
+            or 'ratio_wellconnected_clusters' in stats_to_compute:
+        n_disconnected_clusters = \
+            int((cluster_stats['connectivity'] < 1).sum())
+        ratio_disconnected_clusters = \
+            n_disconnected_clusters / n_clusters
+        n_wellconnected_clusters = \
+            int((cluster_stats['connectivity_normalized_log10(n)'] > 1).sum())
+        ratio_wellconnected_clusters = \
+            n_wellconnected_clusters / n_clusters
+        scalar_stats['n_disconnects'] = n_disconnected_clusters
+        scalar_stats['ratio_disconnected_clusters'] = ratio_disconnected_clusters
+        scalar_stats['n_wellconnected_clusters'] = n_wellconnected_clusters
+        scalar_stats['ratio_wellconnected_clusters'] = ratio_wellconnected_clusters
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S22 - mixing parameter
-    mixing_mu_distr, mixing_xi = compute_mixing_params(
-        graph,
-        clustering_dict,
-        node_mapping_dict_reversed,
-        node_order,
-    )
-
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After mixing parameters!")
+    logging.info('Stats - Mixing parameters')
+    start_time = time.perf_counter()
+    if 'mixing_mus' in stats_to_compute or 'mixing_xi' in stats_to_compute:
+        mixing_mu_distr, mixing_xi = compute_mixing_params(
+            graph,
+            clustering_dict,
+            node_mapping_dict_reversed,
+            node_order,
+        )
+        distr_stats['mixing_mus'] = mixing_mu_distr
+        scalar_stats['mixing_xi'] = mixing_xi
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # S24 - Participation coefficient distribution
-    # TODO: test this
-    logging.info("Stats - S24!")
-    start_time = time.time()
-
-    participation_coeffs_distr, o_participation_coeffs_distr = \
-        compute_participation_coeff_distr(
-            graph,
-            node_mapping_dict_reversed,
-            clustering_dict,
-            node_order,
-            outlier_order
-        )
-
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After participation coefficients!")
+    logging.info('Stats - Participation coefficients')
+    start_time = time.perf_counter()
+    if 'participation_coeffs' in stats_to_compute \
+            or 'o_participation_coeffs' in stats_to_compute:
+        participation_coeffs_distr, o_participation_coeffs_distr = \
+            compute_participation_coeff_distr(
+                graph,
+                node_mapping_dict_reversed,
+                clustering_dict,
+                node_order,
+                outlier_order
+            )
+        distr_stats['participation_coeffs'] = participation_coeffs_distr
+        distr_stats['o_participation_coeffs'] = o_participation_coeffs_distr
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # Save scalar statistics
-    logging.info("Saving Scalar Stats!")
-    start_time = time.time()
-
-    stats_to_save = {
-        'n_nodes': n_nodes,
-        'n_edges': n_edges,
-        'n_concomp': n_concomp,
-        'deg_assort': deg_assort,
-        'global_ccoeff': global_ccoeff,
-        'diameter': diameter,
-
-        'n_onodes': n_onodes,
-        'o_o_edges': o_o_edges,
-        'o_no_edges': o_no_edges,
-
-        'n_clusters': n_clusters,
-        'n_disconnects': n_disconnected_clusters,
-        'ratio_disconnected_clusters': ratio_disconnected_clusters,
-        'n_wellconnected_clusters': n_wellconnected_clusters,
-        'ratio_wellconnected_clusters': ratio_wellconnected_clusters,
-        'mixing_xi': mixing_xi,
-    }
-    save_scalar_stats(dir_path, stats_to_save, overwrite)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After Saving scalar stats!")
+    logging.info('Saving scalar statistics')
+    start_time = time.perf_counter()
+    save_scalar_stats(dir_path, scalar_stats, overwrite)
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
     # Save distribution statistics
+    logging.info('Saving distribution statistics')
+    start_time = time.perf_counter()
+    save_distr_stats(dir_path, distr_stats, overwrite)
+    logging.info(f'Time taken: {time.perf_counter() - start_time:.3f} seconds')
 
-    logging.info("Saving Distribution Stats!")
-    start_time = time.time()
+    logging.info(
+        f'Total time taken: {time.perf_counter() - job_start_time:.3f} seconds'
+    )
 
-    distr_stats_dict = {
-        'degree': deg_distr,
-        'concomp_sizes': concomp_sizes_distr,
 
-        'osub_degree': osub_deg_distr,
-        'o_deg': o_deg_distr,
+def prepare_logging(output_folder, is_overwrite):
+    logging.basicConfig(
+        filename=os.path.join(output_folder, STATS_LOG_FILENAME),
+        filemode='w' if is_overwrite else 'a',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 
-        'c_size': c_n_nodes_distr,
-        'c_edges': c_n_edges_distr,
-        'mincuts': mincuts_distr,
-        'mixing_mus': mixing_mu_distr,
-        'participation_coeffs': participation_coeffs_distr,
-        'o_participation_coeffs': o_participation_coeffs_distr,
-    }
-    save_distr_stats(overwrite, dir_path, distr_stats_dict)
-    logging.info(f"Time taken: {round(time.time() - start_time, 3)} seconds")
-    log_cpu_ram_usage("After Distribution scalar stats!")
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
 
-    logging.info(f"Total Time taken: {round(
-        time.time() - job_start_time, 3)} seconds")
-    log_cpu_ram_usage("Usage statistics after job completion!")
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console.setFormatter(formatter)
+
+    logging.getLogger('').addHandler(console)
 
 
 def log_cpu_ram_usage(step_name):
     cpu_percent = psutil.cpu_percent()
     ram_percent = psutil.virtual_memory().percent
     disk_percent = psutil.disk_usage('/').percent
-    logging.info(f"Step: {step_name} | CPU Usage: {cpu_percent}% | RAM Usage: {
-                 ram_percent}% | Disk Usage: {disk_percent}")
+    logging.info(f'Step: {step_name} | CPU Usage: {cpu_percent}% | RAM Usage: {
+                 ram_percent}% | Disk Usage: {disk_percent}')
 
 
-def compute_cluster_stats(input_network, input_clustering, cluster_mapping_dict_reversed, cluster_order):
-    clusters = load_clusters(input_clustering)  # {cluster_id: subgraph}
-    edgelist_reader = nk.graphio.EdgeListReader('\t', 0)
-    nk_graph = edgelist_reader.read(input_network)
-    global_graph = Graph(nk_graph, '')
-
-    n_nodes_cluster = [
-        clusters[cluster_mapping_dict_reversed[cluster_id]].n()
-        for cluster_id in cluster_order
-    ]
-
-    n_edges_cluster = [
-        clusters[
-            cluster_mapping_dict_reversed[cluster_id]
-        ].count_edges(global_graph)
-        for cluster_id in cluster_order
-    ]
-
-    clusters = {
-        cluster_id: clusters[
-            cluster_mapping_dict_reversed[cluster_id]
-        ].realize(global_graph)
-        for cluster_id in cluster_order
-    }
-
-    mincuts = [
-        viecut(clusters[cluster_id])[-1]
-        for cluster_id in cluster_order
-    ]
-    mincuts_normalized = [
-        mincut / np.log10(n)
-        for mincut, n in zip(mincuts, n_nodes_cluster)
-    ]
-
-    cluster_stats = pd.DataFrame(
-        list(
-            zip(
-                cluster_order,
-                n_nodes_cluster,
-                n_edges_cluster,
-                mincuts,
-                mincuts_normalized,
-            )
-        ),
-        columns=[
-            'cluster',
-            'n',
-            'm',
-            'connectivity',
-            'connectivity_normalized_log10(n)',
-        ]
-    )
-
-    return cluster_stats
-
-
-def save_distr_stats(overwrite, dir_path, distr_stats_dict):
-    distribution_arr = (dir_path / 'distributions').glob('*.distribution')
+def save_distr_stats(dir_path, distr_stats_dict, overwrite):
+    distribution_arr = dir_path.glob('*.distribution')
     distribution_name_arr = [
         Path(current_distribution_file).stem
         for current_distribution_file in distribution_arr
@@ -452,12 +497,9 @@ def save_distr_stats(overwrite, dir_path, distr_stats_dict):
 
 def save_scalar_stats(dir_path, stats_to_save, overwrite):
     stats_file = dir_path / STATS_JSON_FILENAME
-    file_rw_bit = 'w'
-
     stats_dict = {}
     if stats_file.is_file():
-        file_rw_bit = 'r'
-        with stats_file.open(file_rw_bit) as f:
+        with stats_file.open('r') as f:
             stats_dict = json.load(f)
 
     for stat, value in stats_to_save.items():
@@ -674,19 +716,19 @@ def compute_cluster_stats(network_fp, clustering_fp, cluster_iid2id, cluster_ord
     ]
 
     # TODO: check this reader
-    edgelist_reader = nk.graphio.EdgeListReader("\t", 0)
+    edgelist_reader = nk.graphio.EdgeListReader('\t', 0)
     nk_graph = edgelist_reader.read(network_fp)
 
-    global_graph = Graph(nk_graph, "")
+    global_graph = Graph(nk_graph, '')
     ms = [
         cluster.count_edges(global_graph)
         for cluster in clusters
     ]
 
-    # modularities = [
-    #     global_graph.modularity_of(cluster)
-    #     for cluster in clusters
-    # ]
+    modularities = [
+        global_graph.modularity_of(cluster)
+        for cluster in clusters
+    ]
 
     clusters = [
         cluster.realize(global_graph)
@@ -701,31 +743,11 @@ def compute_cluster_stats(network_fp, clustering_fp, cluster_iid2id, cluster_ord
         mincut / np.log10(ns[i])
         for i, mincut in enumerate(mincuts)
     ]
-    # mincuts_normalized_log2 = [
-    #     mincut / np.log2(ns[i])
-    #     for i, mincut in enumerate(mincuts)
-    # ]
-    # mincuts_normalized_sqrt = [
-    #     mincut / (ns[i] ** 0.5 / 5)
-    #     for i, mincut in enumerate(mincuts)
-    # ]
 
-    # conductances = [
-    #     cluster.conductance(global_graph)
-    #     for cluster in clusters
-    # ]
-
-    # m = global_graph.m()
-    # ids.append("Overall")
-    # modularities.append(sum(modularities))
-
-    # ns.append(global_graph.n())
-    # ms.append(m)
-    # mincuts.append(None)
-    # mincuts_normalized.append(None)
-    # mincuts_normalized_log2.append(None)
-    # mincuts_normalized_sqrt.append(None)
-    # conductances.append(None)
+    conductances = [
+        cluster.conductance(global_graph)
+        for cluster in clusters
+    ]
 
     df = pd.DataFrame(
         list(
@@ -733,24 +755,20 @@ def compute_cluster_stats(network_fp, clustering_fp, cluster_iid2id, cluster_ord
                 ids,
                 ns,
                 ms,
-                # modularities,
+                modularities,
                 mincuts,
                 mincuts_normalized,
-                # mincuts_normalized_log2,
-                # mincuts_normalized_sqrt,
-                # conductances
+                conductances,
             )
         ),
         columns=[
             'cluster',
             'n',
             'm',
-            # 'modularity',
+            'modularity',
             'connectivity',
             'connectivity_normalized_log10(n)',
-            # 'connectivity_normalized_log2(n)',
-            # 'connectivity_normalized_sqrt(n)/5',
-            # 'conductance',
+            'conductance',
         ]
     )
 
