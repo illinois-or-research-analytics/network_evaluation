@@ -6,7 +6,7 @@ import numpy as np
 RESOLUTIONS = {'.001'}
 
 
-root = Path('output/')
+root = Path('output/tables/')
 output = Path('output/plots/')
 stats = {
     ('mincuts', 'distribution', 'ks'),
@@ -14,6 +14,10 @@ stats = {
     ('mixing_mus', 'distribution', 'ks'),
     ('global_ccoeff', 'scalar', 'rel_diff'),
     ('deg_assort', 'scalar', 'rel_diff'),
+    ('degree', 'distribution', 'ks'),
+    ('mixing_xi', 'scalar', 'rel_diff'),
+    ('c_size', 'distribution', 'ks'),
+    ('c_edges', 'distribution', 'ks'),
 }
 
 # Expected input:
