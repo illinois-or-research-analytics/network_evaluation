@@ -138,7 +138,7 @@ for network_id in all_network_ids:
 
                 df_tmp = pd.read_csv(comp_fp)
                 df_tmp['source'] = replicate_id
-                df_tmp['distance'] = df_tmp['distance'].abs()
+                df_tmp['distance'] = df_tmp['distance']
 
                 if df is None:
                     df = df_tmp
@@ -186,12 +186,19 @@ comparable_pairs = {
 }
 
 output_tables_dir = output_dir / 'tables'
-output_tables_dir.mkdir(exist_ok=True, parents=True)
+if not output_tables_dir.exists():
+    output_tables_dir.mkdir(parents=True)
+else:
+    for fp in output_tables_dir.iterdir():
+        fp.unlink()
 
 for network_id, resolution in comparable_pairs:
     dfs = comp_results[network_id][resolution]
     agg_df = None
     for name, df in zip(names, dfs):
+        if df is None:
+            continue
+
         grouped_df = df.groupby([
             'stat',
             'stat_type',
