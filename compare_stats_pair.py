@@ -38,11 +38,13 @@ def parse_json(stats_path):
         return json.load(f)
 
 
-def scalar_distance(input_scalar, replicate_scalar, dist_type):
+def scalar_distance(x, x_bar, dist_type):
     if dist_type == 'abs_diff':
-        d = abs(input_scalar - replicate_scalar)
+        d = x - x_bar
     elif dist_type == 'rel_diff':
-        d = abs(input_scalar - replicate_scalar) / input_scalar
+        d = (x - x_bar) / x
+    elif dist_type == 'rpd':
+        d = (x - x_bar) / (abs(x) + abs(x_bar))
     else:
         raise ValueError(f"Unknown distance type: {dist_type}")
     return d
@@ -97,7 +99,7 @@ def compare_scalars(
     for name in common_stats:
         diff_dict[name] = dict()
 
-        for dist_type in ['abs_diff', 'rel_diff']:
+        for dist_type in ['abs_diff', 'rel_diff', 'rpd']:
             try:
                 diff = scalar_distance(
                     network_1_stats[name],
