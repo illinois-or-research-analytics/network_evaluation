@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 COMP_FN = 'compare_output.csv'
 
-stats = {
+stats = [
     ('mincuts', 'distribution', 'ks'),
     ('diameter', 'scalar', 'rpd'),
     ('mixing_mus', 'distribution', 'ks'),
@@ -18,7 +18,9 @@ stats = {
     ('degree', 'distribution', 'ks'),
     ('mixing_xi', 'scalar', 'rpd'),
     ('c_edges', 'distribution', 'ks'),
-}
+    ('concomp_sizes', 'distribution', 'ks'),
+    ('n_concomp', 'scalar', 'rpd'),
+]
 
 
 def parse_args():
@@ -191,12 +193,12 @@ df_successes.to_csv(
 
 #
 
-comparable_pairs = {
+comparable_pairs = [
     (network_id, resolution)
     for network_id in all_network_ids
     for resolution in all_resolutions[network_id]
     if (np.array(successes[network_id][resolution]) > 0).sum() > 1
-}
+]
 
 # output_tables_dir = output_dir / 'tables'
 # if not output_tables_dir.exists():
@@ -228,16 +230,16 @@ for network_id, resolution in comparable_pairs:
             )[(network_id, resolution)] = \
                 df_tmp['distance'].values
 
-distr_stats = {
+distr_stats = [
     (stat, stat_type, distance_type)
     for (stat, stat_type, distance_type) in stats
     if stat_type == 'distribution'
-}
+]
 
 df_list = []
 for (stat, stat_type, distance_type) in distr_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}\n{distance_type}'
+    stat_id = f'{stat}'
     for sim_name, data in sim_dict.items():
         for (network_id, resolution), distances in data.items():
             network_resolution = f'{network_id}\n$r=0{resolution}$'
@@ -267,16 +269,17 @@ plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 fig.tight_layout()
 fig.savefig(output_dir / 'boxplot_distr.png')
 
-scalar_stats = {
+scalar_stats = [
     (stat, stat_type, distance_type)
     for (stat, stat_type, distance_type) in stats
     if stat_type == 'scalar'
-}
+]
+
 df_list_nonneg = []
 df_list_nonpos = []
 for (stat, stat_type, distance_type) in scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}\n{distance_type}'
+    stat_id = f'{stat}'
     for sim_name, data in sim_dict.items():
         for (network_id, resolution), distances in data.items():
             network_resolution = f'{network_id}\n$r=0{resolution}$'
@@ -291,7 +294,6 @@ for (stat, stat_type, distance_type) in scalar_stats:
                     )
 
 fig, ax = plt.subplots(2, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
-
 df_nonneg = pd.DataFrame(
     df_list_nonneg,
     columns=[
@@ -313,7 +315,6 @@ ax[0].set_ylim(-0.0, 1.1)
 # ax[0].set_title('Non-negative distances')
 ax[0].set_xlabel('')
 ax[0].set_xticklabels([])
-
 df_nonpos = pd.DataFrame(
     df_list_nonpos,
     columns=[
@@ -335,6 +336,109 @@ ax[1].set_ylim(-1.1, 0.0)
 # ax[1].set_title('Non-positive distances')
 ax[1].set_xlabel('')
 ax[1].legend_.remove()
-
 fig.tight_layout()
 fig.savefig(output_dir / 'boxplot_scalar.png')
+
+df_list = []
+for (stat, stat_type, distance_type) in scalar_stats:
+    sim_dict = agg[(stat, stat_type, distance_type)]
+    stat_id = f'{stat}'
+    for sim_name, data in sim_dict.items():
+        for (network_id, resolution), distances in data.items():
+            network_resolution = f'{network_id}\n$r=0{resolution}$'
+            for distance in distances:
+                if distance not in [-1, 1]:
+                    df_list.append(
+                        [stat_id, sim_name, network_resolution, distance]
+                    )
+df = pd.DataFrame(
+    df_list,
+    columns=[
+        'Stat',
+        'Simulator',
+        'Network',
+        'Distance',
+    ]
+)
+
+fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(distr_stats), 5))
+ax = sns.boxplot(
+    x='Stat',
+    y='Distance',
+    hue='Simulator',
+    data=df,
+)
+ax.set_ylim(-1.1, 1.1)
+plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+fig.tight_layout()
+fig.savefig(output_dir / 'boxplot_scalar_joined_remove.png')
+
+df_list = []
+for (stat, stat_type, distance_type) in scalar_stats:
+    sim_dict = agg[(stat, stat_type, distance_type)]
+    stat_id = f'{stat}'
+    for sim_name, data in sim_dict.items():
+        for (network_id, resolution), distances in data.items():
+            network_resolution = f'{network_id}\n$r=0{resolution}$'
+            for distance in distances:
+                df_list.append(
+                    [stat_id, sim_name, network_resolution, distance]
+                )
+df = pd.DataFrame(
+    df_list,
+    columns=[
+        'Stat',
+        'Simulator',
+        'Network',
+        'Distance',
+    ]
+)
+fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
+ax = sns.boxplot(
+    x='Stat',
+    y='Distance',
+    hue='Simulator',
+    data=df,
+)
+ax.set_ylim(-1.1, 1.1)
+plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+fig.tight_layout()
+fig.savefig(output_dir / 'boxplot_scalar_joined.png')
+
+scalar_stats_potential_0 = [
+    (stat, stat_type, distance_type)
+    for (stat, stat_type, distance_type) in stats
+    if stat in ['global_ccoeff', 'local_ccoeff']
+]
+df_list = []
+for (stat, stat_type, distance_type) in scalar_stats_potential_0:
+    sim_dict = agg[(stat, stat_type, distance_type)]
+    stat_id = f'{stat}'
+    for sim_name, data in sim_dict.items():
+        for (network_id, resolution), distances in data.items():
+            network_resolution = f'{network_id}\n$r=0{resolution}$'
+            for distance in distances:
+                df_list.append(
+                    [stat_id, sim_name, network_resolution, distance]
+                )
+df = pd.DataFrame(
+    df_list,
+    columns=[
+        'Stat',
+        'Simulator',
+        'Network',
+        'Distance',
+    ]
+)
+fig, ax = plt.subplots(1, 1, dpi=150, figsize=(
+    2 * len(scalar_stats_potential_0), 5))
+ax = sns.violinplot(
+    x='Stat',
+    y='Distance',
+    hue='Simulator',
+    data=df,
+)
+ax.set_ylim(-1.1, 1.1)
+plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+fig.tight_layout()
+fig.savefig(output_dir / 'violinplot_scalar_joined.png')
