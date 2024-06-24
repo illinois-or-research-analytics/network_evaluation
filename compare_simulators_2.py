@@ -237,7 +237,7 @@ distr_stats = {
 df_list = []
 for (stat, stat_type, distance_type) in distr_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}\n{stat_type}\n{distance_type}'
+    stat_id = f'{stat}\n{distance_type}'
     for sim_name, data in sim_dict.items():
         for (network_id, resolution), distances in data.items():
             network_resolution = f'{network_id}\n$r=0{resolution}$'
@@ -272,19 +272,28 @@ scalar_stats = {
     for (stat, stat_type, distance_type) in stats
     if stat_type == 'scalar'
 }
-df_list = []
+df_list_nonneg = []
+df_list_nonpos = []
 for (stat, stat_type, distance_type) in scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}\n{stat_type}\n{distance_type}'
+    stat_id = f'{stat}\n{distance_type}'
     for sim_name, data in sim_dict.items():
         for (network_id, resolution), distances in data.items():
             network_resolution = f'{network_id}\n$r=0{resolution}$'
             for distance in distances:
-                df_list.append(
-                    [stat_id, sim_name, network_resolution, distance]
-                )
-df = pd.DataFrame(
-    df_list,
+                if distance >= 0:
+                    df_list_nonneg.append(
+                        [stat_id, sim_name, network_resolution, distance]
+                    )
+                elif distance < 0:
+                    df_list_nonpos.append(
+                        [stat_id, sim_name, network_resolution, distance]
+                    )
+
+fig, ax = plt.subplots(2, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
+
+df_nonneg = pd.DataFrame(
+    df_list_nonneg,
     columns=[
         'Stat',
         'Simulator',
@@ -292,14 +301,40 @@ df = pd.DataFrame(
         'Distance',
     ]
 )
-fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
-ax = sns.boxplot(
+sns.boxplot(
     x='Stat',
     y='Distance',
     hue='Simulator',
-    data=df,
+    data=df_nonneg,
+    ax=ax[0],
 )
-ax.set_ylim(-1.1, 1.1)
-plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+ax[0].set_ylim(-0.0, 1.1)
+# ax[0].axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+# ax[0].set_title('Non-negative distances')
+ax[0].set_xlabel('')
+ax[0].set_xticklabels([])
+
+df_nonpos = pd.DataFrame(
+    df_list_nonpos,
+    columns=[
+        'Stat',
+        'Simulator',
+        'Network',
+        'Distance',
+    ]
+)
+sns.boxplot(
+    x='Stat',
+    y='Distance',
+    hue='Simulator',
+    data=df_nonpos,
+    ax=ax[1],
+)
+ax[1].set_ylim(-1.1, 0.0)
+# ax[1].axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+# ax[1].set_title('Non-positive distances')
+ax[1].set_xlabel('')
+ax[1].legend_.remove()
+
 fig.tight_layout()
 fig.savefig(output_dir / 'boxplot_scalar.png')
