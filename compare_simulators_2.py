@@ -225,10 +225,10 @@ for network_id, resolution in comparable_pairs:
                 (stat, stat_type, distance_type),
                 dict(),
             ).setdefault(
-                name,
+                (network_id, resolution),
                 dict(),
-            )[(network_id, resolution)] = \
-                df_tmp['distance'].values
+            )[name] = \
+                df_tmp['distance'].values.mean()
 
 distr_stats = [
     (stat, stat_type, distance_type)
@@ -240,13 +240,12 @@ df_list = []
 for (stat, stat_type, distance_type) in distr_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
-    for sim_name, data in sim_dict.items():
-        for (network_id, resolution), distances in data.items():
-            network_resolution = f'{network_id}\n$r=0{resolution}$'
-            for distance in distances:
-                df_list.append(
-                    [stat_id, sim_name, network_resolution, distance]
-                )
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            df_list.append(
+                [stat_id, sim_name, network_resolution, distance]
+            )
 df = pd.DataFrame(
     df_list,
     columns=[
@@ -256,7 +255,6 @@ df = pd.DataFrame(
         'Distance',
     ]
 )
-
 fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(distr_stats), 5))
 ax = sns.boxplot(
     x='Stat',
@@ -274,24 +272,22 @@ scalar_stats = [
     for (stat, stat_type, distance_type) in stats
     if stat_type == 'scalar'
 ]
-
 df_list_nonneg = []
 df_list_nonpos = []
 for (stat, stat_type, distance_type) in scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
-    for sim_name, data in sim_dict.items():
-        for (network_id, resolution), distances in data.items():
-            network_resolution = f'{network_id}\n$r=0{resolution}$'
-            for distance in distances:
-                if distance >= 0:
-                    df_list_nonneg.append(
-                        [stat_id, sim_name, network_resolution, distance]
-                    )
-                elif distance < 0:
-                    df_list_nonpos.append(
-                        [stat_id, sim_name, network_resolution, distance]
-                    )
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            if distance >= 0:
+                df_list_nonneg.append(
+                    [stat_id, sim_name, network_resolution, distance]
+                )
+            elif distance < 0:
+                df_list_nonpos.append(
+                    [stat_id, sim_name, network_resolution, distance]
+                )
 
 fig, ax = plt.subplots(2, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
 df_nonneg = pd.DataFrame(
@@ -343,14 +339,13 @@ df_list = []
 for (stat, stat_type, distance_type) in scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
-    for sim_name, data in sim_dict.items():
-        for (network_id, resolution), distances in data.items():
-            network_resolution = f'{network_id}\n$r=0{resolution}$'
-            for distance in distances:
-                if distance not in [-1, 1]:
-                    df_list.append(
-                        [stat_id, sim_name, network_resolution, distance]
-                    )
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            if distance not in [-1, 1]:
+                df_list.append(
+                    [stat_id, sim_name, network_resolution, distance]
+                )
 df = pd.DataFrame(
     df_list,
     columns=[
@@ -360,7 +355,6 @@ df = pd.DataFrame(
         'Distance',
     ]
 )
-
 fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(distr_stats), 5))
 ax = sns.boxplot(
     x='Stat',
@@ -377,13 +371,12 @@ df_list = []
 for (stat, stat_type, distance_type) in scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
-    for sim_name, data in sim_dict.items():
-        for (network_id, resolution), distances in data.items():
-            network_resolution = f'{network_id}\n$r=0{resolution}$'
-            for distance in distances:
-                df_list.append(
-                    [stat_id, sim_name, network_resolution, distance]
-                )
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            df_list.append(
+                [stat_id, sim_name, network_resolution, distance]
+            )
 df = pd.DataFrame(
     df_list,
     columns=[
@@ -414,13 +407,12 @@ df_list = []
 for (stat, stat_type, distance_type) in scalar_stats_potential_0:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
-    for sim_name, data in sim_dict.items():
-        for (network_id, resolution), distances in data.items():
-            network_resolution = f'{network_id}\n$r=0{resolution}$'
-            for distance in distances:
-                df_list.append(
-                    [stat_id, sim_name, network_resolution, distance]
-                )
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            df_list.append(
+                [stat_id, sim_name, network_resolution, distance]
+            )
 df = pd.DataFrame(
     df_list,
     columns=[
