@@ -19,9 +19,11 @@ CSIZE_DISTR = 'c_size'
 MCS_DIST = 'mincuts'
 O_PART_COEFF_DISTR = 'o_participation_coeffs'
 PART_COEFF_DISTR = 'participation_coeffs'
+MIXING_MUS_DISTR = 'mixing_mus'
+CEDGE_DISTR = 'c_edges'
 
-NODE_DISTR_STATS = [DEGR_DISTR, PART_COEFF_DISTR]
-COMM_DISTR_STATS = [CSIZE_DISTR, MCS_DIST]
+NODE_DISTR_STATS = [DEGR_DISTR, PART_COEFF_DISTR, MIXING_MUS_DISTR]
+COMM_DISTR_STATS = [CSIZE_DISTR, MCS_DIST, CEDGE_DISTR]
 OUTLIER_DISTR_STATS = [O_DEGR_DISTR, O_PART_COEFF_DISTR]
 
 
@@ -76,6 +78,9 @@ def sequence_distance(seq_1, seq_2, dist_type):
         d = np.linalg.norm(seq_1 - seq_2, ord=2)
     elif dist_type == 'rmse':
         d = np.sqrt(np.mean((seq_1 - seq_2) ** 2))
+    elif dist_type == 'cosine':
+        d = 1 - np.dot(seq_1, seq_2) / \
+            (np.linalg.norm(seq_1) * np.linalg.norm(seq_2))
     else:
         raise ValueError(f"Unknown distance type: {dist_type}")
 
@@ -289,7 +294,7 @@ def compare_sequences(
         network_2_seq = df_joined['2'].values
 
         diff_dict[name] = dict()
-        for dist_type in ['l1', 'mean_l1', 'l2', 'rmse']:
+        for dist_type in ['l1', 'mean_l1', 'l2', 'rmse', 'cosine']:
             try:
                 diff = sequence_distance(
                     network_1_seq,

@@ -20,6 +20,16 @@ stats = [
     ('c_edges', 'distribution', 'ks'),
     ('concomp_sizes', 'distribution', 'ks'),
     ('n_concomp', 'scalar', 'rpd'),
+    ('mincuts', 'sequence', 'rmse'),
+    ('degree', 'sequence', 'rmse'),
+    ('mixing_mus', 'sequence', 'rmse'),
+    ('c_edges', 'sequence', 'rmse'),
+    ('n_edges', 'scalar', 'rpd')
+    # ('concomp_sizes', 'sequence', 'rmse'),
+]
+
+RESOLUTIONS = [
+    '.001'
 ]
 
 
@@ -197,7 +207,7 @@ comparable_pairs = [
     (network_id, resolution)
     for network_id in all_network_ids
     for resolution in all_resolutions[network_id]
-    if (np.array(successes[network_id][resolution]) > 0).sum() > 1
+    if (np.array(successes[network_id][resolution]) > 0).sum() > 1 and resolution in RESOLUTIONS
 ]
 
 # output_tables_dir = output_dir / 'tables'
@@ -221,21 +231,25 @@ for network_id, resolution in comparable_pairs:
                 & (df['distance_type'] == distance_type)
             ]
 
+            if len(df_tmp['distance'].values) > 0:
+                val = df_tmp['distance'].values.mean()
+            else:
+                print(stat, network_id, resolution, name)
+                continue
+
             agg.setdefault(
                 (stat, stat_type, distance_type),
                 dict(),
             ).setdefault(
                 (network_id, resolution),
                 dict(),
-            )[name] = \
-                df_tmp['distance'].values.mean()
+            )[name] = val
 
 distr_stats = [
     (stat, stat_type, distance_type)
     for (stat, stat_type, distance_type) in stats
     if stat_type == 'distribution'
 ]
-
 df_list = []
 for (stat, stat_type, distance_type) in distr_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
@@ -288,7 +302,6 @@ for (stat, stat_type, distance_type) in scalar_stats:
                 df_list_nonpos.append(
                     [stat_id, sim_name, network_resolution, distance]
                 )
-
 fig, ax = plt.subplots(2, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
 df_nonneg = pd.DataFrame(
     df_list_nonneg,
@@ -434,3 +447,60 @@ ax.set_ylim(-1.1, 1.1)
 plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 fig.tight_layout()
 fig.savefig(output_dir / 'violinplot_scalar_joined.png')
+
+seq_stats = [
+    (stat, stat_type, distance_type)
+    for (stat, stat_type, distance_type) in stats
+    if stat_type == 'sequence'
+]
+df_list = []
+for (stat, stat_type, distance_type) in seq_stats:
+    sim_dict = agg[(stat, stat_type, distance_type)]
+    stat_id = f'{stat}'
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            df_list.append(
+                [stat_id, sim_name, network_resolution, distance]
+            )
+df = pd.DataFrame(
+    df_list,
+    columns=[
+        'Stat',
+        'Simulator',
+        'Network',
+        'Distance',
+    ]
+)
+selection = [
+    stat
+    for (stat, stat_type, _) in stats
+    if stat_type == 'sequence'
+]
+fig, axes = plt.subplots(1, len(selection), dpi=150,
+                         figsize=(3 * len(selection), 5))
+for i, col in enumerate(selection):
+    values = df[df['Stat'] == col]
+    ax = sns.boxplot(
+        x='Stat',
+        y='Distance',
+        hue='Simulator',
+        data=values,
+        ax=axes.flatten()[i],
+    )
+    ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
+              ncol=1, fancybox=True)
+    ax.set_ylim(0.0, values['Distance'].quantile(0.9))
+    if i != len(selection) - 1:
+        ax.legend_.remove()
+# fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(seq_stats), 5))
+# ax = sns.boxplot(
+#     x='Stat',
+#     y='Distance',
+#     hue='Simulator',
+#     data=df,
+# )
+# ax.set_ylim(-0.1, 50.1)
+# plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+fig.tight_layout()
+fig.savefig(output_dir / 'boxplot_seq.png')
