@@ -24,7 +24,10 @@ stats = [
     ('degree', 'sequence', 'rmse'),
     ('mixing_mus', 'sequence', 'rmse'),
     ('c_edges', 'sequence', 'rmse'),
-    ('n_edges', 'scalar', 'rpd')
+    ('n_edges', 'scalar', 'rpd'),
+    ('participation_coeffs', 'distribution', 'ks'),
+    ('participation_coeffs', 'sequence', 'rmse'),
+    ('o_no_edges', 'scalar', 'rpd'),
     # ('concomp_sizes', 'sequence', 'rmse'),
 ]
 
@@ -114,6 +117,8 @@ for network_id in all_network_ids:
         resolutions,
     )
 
+    all_resolutions[network_id] = RESOLUTIONS
+
 all_replicates = dict()
 for network_id in all_network_ids:
     all_replicates[network_id] = dict()
@@ -149,12 +154,19 @@ for network_id in all_network_ids:
             n_successes = 0
             comp = []
 
-            n_replicates = len(all_replicates[network_id][resolution])
+            n_replicates = 0
 
             df = None
             for replicate_id in all_replicates[network_id][resolution]:
-                comp_fp = root / network_id / \
-                    f'leiden{resolution}' / replicate_id / COMP_FN
+                comp_root_fp = root / network_id / \
+                    f'leiden{resolution}' / replicate_id
+
+                if not comp_root_fp.exists():
+                    continue
+
+                n_replicates += 1
+
+                comp_fp = comp_root_fp / COMP_FN
 
                 if not comp_fp.exists():
                     continue
@@ -170,7 +182,9 @@ for network_id in all_network_ids:
                 else:
                     df = pd.concat([df, df_tmp])
 
-            ratio_successes = n_successes / n_replicates
+            ratio_successes = n_successes / n_replicates if n_successes > 0 else 0.0
+            if ratio_successes < 1.0:
+                print(f'{root} {network_id} {resolution} {ratio_successes}')
             successes[network_id][resolution].append(ratio_successes)
             comp_results[network_id][resolution].append(df)
 

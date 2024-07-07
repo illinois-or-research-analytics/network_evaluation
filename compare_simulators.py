@@ -89,6 +89,8 @@ for network_id in all_network_ids:
         resolutions,
     )
 
+    all_resolutions[network_id] = set()
+
 all_replicates = dict()
 for network_id in all_network_ids:
     all_replicates[network_id] = dict()
