@@ -10,22 +10,60 @@ import matplotlib.pyplot as plt
 COMP_FN = 'compare_output.csv'
 
 stats = [
-    ('mincuts', 'distribution', 'ks'),
-    ('diameter', 'scalar', 'rpd'),
-    ('mixing_mus', 'distribution', 'ks'),
-    ('global_ccoeff', 'scalar', 'rpd'),
-    ('local_ccoeff', 'scalar', 'rpd'),
-    ('degree', 'distribution', 'ks'),
-    ('mixing_xi', 'scalar', 'rpd'),
-    ('c_edges', 'distribution', 'ks'),
-    ('concomp_sizes', 'distribution', 'ks'),
-    ('n_concomp', 'scalar', 'rpd'),
+    # == Scalar statistics ==
+
+    # Number of edges
+    ('n_edges', 'scalar', 'abs_diff'),
+    # Number of connected components
+    ('n_concomp', 'scalar', 'abs_diff'),
+    # Degree assortativity
+    ('deg_assort', 'scalar', 'abs_diff'),
+    # Mean k-core
+    # TODO: Not implemented
+    # Mean local clustering coefficient
+    ('local_ccoeff', 'scalar', 'abs_diff'),
+    # Global clustering coefficient
+    ('global_ccoeff', 'scalar', 'abs_diff'),
+    # Leading eigenvalue of adjacency matrix
+    # TODO: Not implemented
+    # Leading eigenvalue of Hashimoto matrix
+    # TODO: Not implemented
+    # Characteristic time of a random walk
+    # TODO: Not implemented
+    # Pseudo-diameter
+    ('diameter', 'scalar', 'abs_diff'),
+    # Node percolation profile (random removal)
+    # TODO: Not implemented
+    # Node percolation profile (targeted removal)
+    # TODO: Not implemented
+    # Fraction of nodes in the largest component
+    # TODO: Not implemented
+    # Mixing parameter xi
+    ('mixing_xi', 'scalar', 'abs_diff'),
+
+    # == Sequence statistics ==
+
+    # Minimum cut size (cluster)
     ('mincuts', 'sequence', 'rmse'),
-    ('degree', 'sequence', 'rmse'),
-    ('mixing_mus', 'sequence', 'rmse'),
+    # Number of internal edges (cluster)
     ('c_edges', 'sequence', 'rmse'),
-    ('n_edges', 'scalar', 'rpd')
-    # ('concomp_sizes', 'sequence', 'rmse'),
+
+    # Degree (vertex)
+    ('degree', 'sequence', 'rmse'),
+    # Mixing parameter mu (vertex)
+    ('mixing_mus', 'sequence', 'rmse'),
+
+    # == Distribution statistics ==
+
+    # Minimum cut size (cluster)
+    ('mincuts', 'distribution', 'ks'),
+    # Number of internal edges (cluster)
+    ('mixing_mus', 'distribution', 'ks'),
+
+    # Degree (vertex)
+    ('degree', 'distribution', 'ks'),
+    # Mixing parameter mu (vertex)
+    ('c_edges', 'distribution', 'ks'),
 ]
 
 RESOLUTIONS = [
@@ -87,6 +125,7 @@ output_dir = Path(args.output_dir)
 
 output_dir.mkdir(exist_ok=True, parents=True)
 
+# Collect all network IDs
 network_ids = [
     set(x.name for x in root.iterdir())
     for root in roots
@@ -97,6 +136,7 @@ all_network_ids = reduce(
     network_ids,
 )
 
+# Collect all resolutions
 all_resolutions = dict()
 for network_id in all_network_ids:
     resolutions = [
@@ -174,8 +214,6 @@ for network_id in all_network_ids:
             successes[network_id][resolution].append(ratio_successes)
             comp_results[network_id][resolution].append(df)
 
-#
-
 df_successes = pd.DataFrame(
     [
         [
@@ -201,21 +239,12 @@ df_successes.to_csv(
     float_format='%.2f',
 )
 
-#
-
 comparable_pairs = [
     (network_id, resolution)
     for network_id in all_network_ids
     for resolution in all_resolutions[network_id]
     if (np.array(successes[network_id][resolution]) > 0).sum() > 1 and resolution in RESOLUTIONS
 ]
-
-# output_tables_dir = output_dir / 'tables'
-# if not output_tables_dir.exists():
-#     output_tables_dir.mkdir(parents=True)
-# else:
-#     for fp in output_tables_dir.iterdir():
-#         fp.unlink()
 
 agg = dict()
 for network_id, resolution in comparable_pairs:
