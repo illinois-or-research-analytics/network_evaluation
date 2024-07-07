@@ -20,6 +20,36 @@ RESOLUTIONS = [
     '.001'
 ]
 
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--names',
+        nargs='+',
+        help='Names of simulators',
+        required='True',
+    )
+    parser.add_argument(
+        '--roots',
+        nargs='+',
+        help='Root directories',
+        required='True',
+    )
+    parser.add_argument(
+        '--output-dir',
+        help='Output directory',
+        required='True',
+    )
+    parser.add_argument(
+        '--with-outliers',
+        action='store_true',
+        help='Include outliers',
+    )
+    return parser.parse_args()
+
+
+args = parse_args()
+
 cluster_seq_stats = [
     # Minimum cut size (cluster)
     ('mincuts', 'sequence', 'rmse'),
@@ -38,6 +68,11 @@ distr_stats = [
     # Number of internal edges (cluster)
     ('c_edges', 'distribution', 'ks'),
 
+    # Degree (vertex)
+    ('degree', 'distribution', 'ks'),
+    # Mixing parameter mu (vertex)
+    ('mixing_mus', 'distribution', 'ks'),
+] if not args.with_outliers else [
     # Degree (vertex)
     ('degree', 'distribution', 'ks'),
     # Mixing parameter mu (vertex)
@@ -75,6 +110,7 @@ positive_scalar_stats = [
     # Characteristic time of a random walk
     # TODO: Not implemented
 ]
+
 stats = sum(
     [
         cluster_seq_stats,
@@ -86,30 +122,6 @@ stats = sum(
     [],
 )
 
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--names',
-        nargs='+',
-        help='Names of simulators',
-        required='True',
-    )
-    parser.add_argument(
-        '--roots',
-        nargs='+',
-        help='Root directories',
-        required='True',
-    )
-    parser.add_argument(
-        '--output-dir',
-        help='Output directory',
-        required='True',
-    )
-    return parser.parse_args()
-
-
-args = parse_args()
 assert len(args.names) == len(args.roots)
 
 names = args.names
