@@ -9,66 +9,82 @@ import matplotlib.pyplot as plt
 
 COMP_FN = 'compare_output.csv'
 
-stats = [
-    # == Scalar statistics ==
+MINMAX_BOUNDED_SCALARS = {
+    'deg_assort': (-2, 2),
+    'local_ccoeff': (-1, 1),
+    'global_ccoeff': (-1, 1),
+    'mixing_xi': (-1, 1),
+}
 
-    # Number of edges
-    ('n_edges', 'scalar', 'abs_diff'),
-    # Number of connected components
-    ('n_concomp', 'scalar', 'abs_diff'),
+RESOLUTIONS = [
+    '.001'
+]
+
+cluster_seq_stats = [
+    # Minimum cut size (cluster)
+    ('mincuts', 'sequence', 'rmse'),
+    # Number of internal edges (cluster)
+    ('c_edges', 'sequence', 'rmse'),
+]
+vertex_seq_stats = [
+    # Degree (vertex)
+    ('degree', 'sequence', 'rmse'),
+    # Mixing parameter mu (vertex)
+    ('mixing_mus', 'sequence', 'rmse'),
+]
+distr_stats = [
+    # Minimum cut size (cluster)
+    ('mincuts', 'distribution', 'ks'),
+    # Number of internal edges (cluster)
+    ('c_edges', 'distribution', 'ks'),
+
+    # Degree (vertex)
+    ('degree', 'distribution', 'ks'),
+    # Mixing parameter mu (vertex)
+    ('mixing_mus', 'distribution', 'ks'),
+]
+bounded_scalar_stats = [
     # Degree assortativity
     ('deg_assort', 'scalar', 'abs_diff'),
-    # Mean k-core
-    # TODO: Not implemented
     # Mean local clustering coefficient
     ('local_ccoeff', 'scalar', 'abs_diff'),
     # Global clustering coefficient
     ('global_ccoeff', 'scalar', 'abs_diff'),
-    # Leading eigenvalue of adjacency matrix
-    # TODO: Not implemented
-    # Leading eigenvalue of Hashimoto matrix
-    # TODO: Not implemented
-    # Characteristic time of a random walk
-    # TODO: Not implemented
-    # Pseudo-diameter
-    ('diameter', 'scalar', 'abs_diff'),
+    # Mixing parameter xi
+    ('mixing_xi', 'scalar', 'abs_diff'),
     # Node percolation profile (random removal)
     # TODO: Not implemented
     # Node percolation profile (targeted removal)
     # TODO: Not implemented
     # Fraction of nodes in the largest component
     # TODO: Not implemented
-    # Mixing parameter xi
-    ('mixing_xi', 'scalar', 'abs_diff'),
-
-    # == Sequence statistics ==
-
-    # Minimum cut size (cluster)
-    ('mincuts', 'sequence', 'rmse'),
-    # Number of internal edges (cluster)
-    ('c_edges', 'sequence', 'rmse'),
-
-    # Degree (vertex)
-    ('degree', 'sequence', 'rmse'),
-    # Mixing parameter mu (vertex)
-    ('mixing_mus', 'sequence', 'rmse'),
-
-    # == Distribution statistics ==
-
-    # Minimum cut size (cluster)
-    ('mincuts', 'distribution', 'ks'),
-    # Number of internal edges (cluster)
-    ('mixing_mus', 'distribution', 'ks'),
-
-    # Degree (vertex)
-    ('degree', 'distribution', 'ks'),
-    # Mixing parameter mu (vertex)
-    ('c_edges', 'distribution', 'ks'),
 ]
-
-RESOLUTIONS = [
-    '.001'
+positive_scalar_stats = [
+    # Number of edges
+    ('n_edges', 'scalar', 'rpd'),
+    # Number of connected components
+    ('n_concomp', 'scalar', 'rpd'),
+    # Pseudo-diameter
+    ('diameter', 'scalar', 'rpd'),
+    # Mean k-core
+    # TODO: Not implemented
+    # Leading eigenvalue of adjacency matrix
+    # TODO: Not implemented
+    # Leading eigenvalue of Hashimoto matrix
+    # TODO: Not implemented
+    # Characteristic time of a random walk
+    # TODO: Not implemented
 ]
+stats = sum(
+    [
+        cluster_seq_stats,
+        vertex_seq_stats,
+        distr_stats,
+        bounded_scalar_stats,
+        positive_scalar_stats,
+    ],
+    [],
+)
 
 
 def parse_args():
@@ -136,30 +152,11 @@ all_network_ids = reduce(
     network_ids,
 )
 
-# Collect all resolutions
-all_resolutions = dict()
-for network_id in all_network_ids:
-    resolutions = [
-        set(
-            x.name.replace('leiden', '')
-            for x in (root / network_id).iterdir()
-        )
-        if (root / network_id).exists()
-        else set()
-        for root in roots
-    ]
-
-    all_resolutions[network_id] = reduce(
-        lambda x, y: x | y,
-        resolutions,
-    )
-
-    all_resolutions[network_id] = RESOLUTIONS
-
+# Collect all replicates
 all_replicates = dict()
 for network_id in all_network_ids:
     all_replicates[network_id] = dict()
-    for resolution in all_resolutions[network_id]:
+    for resolution in RESOLUTIONS:
         replicate_ids = [
             set(
                 x.name
@@ -183,7 +180,7 @@ for network_id in all_network_ids:
     successes[network_id] = dict()
     comp_results[network_id] = dict()
 
-    for resolution in all_resolutions[network_id]:
+    for resolution in RESOLUTIONS:
         successes[network_id][resolution] = []
         comp_results[network_id][resolution] = []
 
@@ -233,7 +230,7 @@ df_successes = pd.DataFrame(
             *successes[network_id][resolution],
         ]
         for network_id in all_network_ids
-        for resolution in all_resolutions[network_id]
+        for resolution in RESOLUTIONS
     ],
     columns=[
         'Network',
@@ -253,7 +250,7 @@ df_successes.to_csv(
 comparable_pairs = [
     (network_id, resolution)
     for network_id in all_network_ids
-    for resolution in all_resolutions[network_id]
+    for resolution in RESOLUTIONS
     if (np.array(successes[network_id][resolution]) > 0).sum() > 1 and resolution in RESOLUTIONS
 ]
 
@@ -285,11 +282,7 @@ for network_id, resolution in comparable_pairs:
                 dict(),
             )[name] = val
 
-distr_stats = [
-    (stat, stat_type, distance_type)
-    for (stat, stat_type, distance_type) in stats
-    if stat_type == 'distribution'
-]
+# Visualize distribution statistics
 df_list = []
 for (stat, stat_type, distance_type) in distr_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
@@ -321,84 +314,17 @@ plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 fig.tight_layout()
 fig.savefig(output_dir / 'boxplot_distr.png')
 
-scalar_stats = [
-    (stat, stat_type, distance_type)
-    for (stat, stat_type, distance_type) in stats
-    if stat_type == 'scalar'
-]
-df_list_nonneg = []
-df_list_nonpos = []
-for (stat, stat_type, distance_type) in scalar_stats:
-    sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}'
-    for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
-        for sim_name, distance in data.items():
-            if distance >= 0:
-                df_list_nonneg.append(
-                    [stat_id, sim_name, network_resolution, distance]
-                )
-            elif distance < 0:
-                df_list_nonpos.append(
-                    [stat_id, sim_name, network_resolution, distance]
-                )
-fig, ax = plt.subplots(2, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
-df_nonneg = pd.DataFrame(
-    df_list_nonneg,
-    columns=[
-        'Stat',
-        'Simulator',
-        'Network',
-        'Distance',
-    ]
-)
-sns.boxplot(
-    x='Stat',
-    y='Distance',
-    hue='Simulator',
-    data=df_nonneg,
-    ax=ax[0],
-)
-ax[0].set_ylim(-0.0, 1.1)
-# ax[0].axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
-# ax[0].set_title('Non-negative distances')
-ax[0].set_xlabel('')
-ax[0].set_xticklabels([])
-df_nonpos = pd.DataFrame(
-    df_list_nonpos,
-    columns=[
-        'Stat',
-        'Simulator',
-        'Network',
-        'Distance',
-    ]
-)
-sns.boxplot(
-    x='Stat',
-    y='Distance',
-    hue='Simulator',
-    data=df_nonpos,
-    ax=ax[1],
-)
-ax[1].set_ylim(-1.1, 0.0)
-# ax[1].axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
-# ax[1].set_title('Non-positive distances')
-ax[1].set_xlabel('')
-ax[1].legend_.remove()
-fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_scalar.png')
-
+# Visualize positive scalar statistics
 df_list = []
-for (stat, stat_type, distance_type) in scalar_stats:
+for (stat, stat_type, distance_type) in positive_scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
         network_resolution = f'{network_id}\n$r=0{resolution}$'
         for sim_name, distance in data.items():
-            if distance not in [-1, 1]:
-                df_list.append(
-                    [stat_id, sim_name, network_resolution, distance]
-                )
+            df_list.append(
+                [stat_id, sim_name, network_resolution, distance]
+            )
 df = pd.DataFrame(
     df_list,
     columns=[
@@ -418,83 +344,11 @@ ax = sns.boxplot(
 ax.set_ylim(-1.1, 1.1)
 plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_scalar_joined_remove.png')
+fig.savefig(output_dir / 'boxplot_positive_scalar.png')
 
+# Visualize bounded scalar statistics
 df_list = []
-for (stat, stat_type, distance_type) in scalar_stats:
-    sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}'
-    for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
-        for sim_name, distance in data.items():
-            df_list.append(
-                [stat_id, sim_name, network_resolution, distance]
-            )
-df = pd.DataFrame(
-    df_list,
-    columns=[
-        'Stat',
-        'Simulator',
-        'Network',
-        'Distance',
-    ]
-)
-fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(scalar_stats), 5))
-ax = sns.boxplot(
-    x='Stat',
-    y='Distance',
-    hue='Simulator',
-    data=df,
-)
-ax.set_ylim(-1.1, 1.1)
-plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
-fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_scalar_joined.png')
-
-scalar_stats_potential_0 = [
-    (stat, stat_type, distance_type)
-    for (stat, stat_type, distance_type) in stats
-    if stat in ['global_ccoeff', 'local_ccoeff']
-]
-df_list = []
-for (stat, stat_type, distance_type) in scalar_stats_potential_0:
-    sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}'
-    for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
-        for sim_name, distance in data.items():
-            df_list.append(
-                [stat_id, sim_name, network_resolution, distance]
-            )
-df = pd.DataFrame(
-    df_list,
-    columns=[
-        'Stat',
-        'Simulator',
-        'Network',
-        'Distance',
-    ]
-)
-fig, ax = plt.subplots(1, 1, dpi=150, figsize=(
-    2 * len(scalar_stats_potential_0), 5))
-ax = sns.violinplot(
-    x='Stat',
-    y='Distance',
-    hue='Simulator',
-    data=df,
-)
-ax.set_ylim(-1.1, 1.1)
-plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
-fig.tight_layout()
-fig.savefig(output_dir / 'violinplot_scalar_joined.png')
-
-seq_stats = [
-    (stat, stat_type, distance_type)
-    for (stat, stat_type, distance_type) in stats
-    if stat_type == 'sequence'
-]
-df_list = []
-for (stat, stat_type, distance_type) in seq_stats:
+for (stat, stat_type, distance_type) in bounded_scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
@@ -514,8 +368,7 @@ df = pd.DataFrame(
 )
 selection = [
     stat
-    for (stat, stat_type, _) in stats
-    if stat_type == 'sequence'
+    for (stat, _, _) in bounded_scalar_stats
 ]
 fig, axes = plt.subplots(1, len(selection), dpi=150,
                          figsize=(3 * len(selection), 5))
@@ -530,17 +383,98 @@ for i, col in enumerate(selection):
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
-    ax.set_ylim(0.0, values['Distance'].quantile(0.9))
+    lb, ub = MINMAX_BOUNDED_SCALARS[col]
+    ax.set_ylim(lb - 0.1, ub + 0.1)
+    ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
     if i != len(selection) - 1:
         ax.legend_.remove()
-# fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(seq_stats), 5))
-# ax = sns.boxplot(
-#     x='Stat',
-#     y='Distance',
-#     hue='Simulator',
-#     data=df,
-# )
-# ax.set_ylim(-0.1, 50.1)
-# plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_seq.png')
+fig.savefig(output_dir / 'boxplot_bounded_scalar.png')
+
+# Visualize cluster sequence statistics
+df_list = []
+for (stat, stat_type, distance_type) in cluster_seq_stats:
+    sim_dict = agg[(stat, stat_type, distance_type)]
+    stat_id = f'{stat}'
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            df_list.append(
+                [stat_id, sim_name, network_resolution, distance]
+            )
+df = pd.DataFrame(
+    df_list,
+    columns=[
+        'Stat',
+        'Simulator',
+        'Network',
+        'Distance',
+    ]
+)
+selection = [
+    stat
+    for (stat, _, _) in cluster_seq_stats
+]
+fig, axes = plt.subplots(1, len(selection), dpi=150,
+                         figsize=(3 * len(selection), 5))
+for i, col in enumerate(selection):
+    values = df[df['Stat'] == col]
+    ax = sns.boxplot(
+        x='Stat',
+        y='Distance',
+        hue='Simulator',
+        data=values,
+        ax=axes.flatten()[i],
+    )
+    ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
+              ncol=1, fancybox=True)
+    ax.set_ylim(0.0, values['Distance'].max() + 0.1)
+    # ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+    if i != len(selection) - 1:
+        ax.legend_.remove()
+fig.tight_layout()
+fig.savefig(output_dir / 'boxplot_cluster_seq.png')
+
+# Visualize vertex sequence statistics
+df_list = []
+for (stat, stat_type, distance_type) in vertex_seq_stats:
+    sim_dict = agg[(stat, stat_type, distance_type)]
+    stat_id = f'{stat}'
+    for (network_id, resolution), data in sim_dict.items():
+        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        for sim_name, distance in data.items():
+            df_list.append(
+                [stat_id, sim_name, network_resolution, distance]
+            )
+df = pd.DataFrame(
+    df_list,
+    columns=[
+        'Stat',
+        'Simulator',
+        'Network',
+        'Distance',
+    ]
+)
+selection = [
+    stat
+    for (stat, _, _) in vertex_seq_stats
+]
+fig, axes = plt.subplots(1, len(selection), dpi=150,
+                         figsize=(3 * len(selection), 5))
+for i, col in enumerate(selection):
+    values = df[df['Stat'] == col]
+    ax = sns.boxplot(
+        x='Stat',
+        y='Distance',
+        hue='Simulator',
+        data=values,
+        ax=axes.flatten()[i],
+    )
+    ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
+              ncol=1, fancybox=True)
+    ax.set_ylim(0.0, values['Distance'].max() + 0.1)
+    # ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+    if i != len(selection) - 1:
+        ax.legend_.remove()
+fig.tight_layout()
+fig.savefig(output_dir / 'boxplot_vertex_seq.png')
