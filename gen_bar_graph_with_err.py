@@ -1,3 +1,9 @@
+# Expected input:
+# root
+# ├── {network}_{resolution}.csv
+
+# Output: output/{stat}_{stat_type}_{distance_type}.pdf
+
 import argparse
 from pathlib import Path
 
@@ -5,14 +11,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-RESOLUTIONS = {'.001'}
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, required=True)
     parser.add_argument('--output', type=str, required=True)
     return parser.parse_args()
+
+RESOLUTIONS = {
+    'leidenmod',
+    'leiden.001',
+    'leiden.01',
+    'k10',
+}
 
 # ex:
 # root = 'output/abcdmcs_abcd/tables/'
@@ -24,22 +35,32 @@ root = Path(args.root)
 output = Path(args.output)
 
 stats = {
-    ('mincuts', 'distribution', 'ks'),
-    ('diameter', 'scalar', 'rpd'),
-    ('mixing_mus', 'distribution', 'ks'),
-    ('global_ccoeff', 'scalar', 'rpd'),
-    ('deg_assort', 'scalar', 'rpd'),
-    ('degree', 'distribution', 'ks'),
-    ('mixing_xi', 'scalar', 'rpd'),
-    ('c_size', 'distribution', 'ks'),
-    ('c_edges', 'distribution', 'ks'),
+    # ('mincuts', 'distribution', 'ks'),
+    # ('diameter', 'scalar', 'rpd'),
+    # ('mixing_mus', 'distribution', 'ks'),
+    # ('global_ccoeff', 'scalar', 'rpd'),
+    # ('deg_assort', 'scalar', 'rpd'),
+    # ('degree', 'distribution', 'ks'),
+    # ('mixing_xi', 'scalar', 'rpd'),
+    # ('c_size', 'distribution', 'ks'),
+    # ('c_edges', 'distribution', 'ks'),
+    ('mincuts', 'sequence', 'rmse'),
+    ('c_edges', 'sequence', 'rmse'),
+    ('degree', 'sequence', 'rmse'),
+    ('mixing_mus', 'sequence', 'rmse'),
+    ('deg_assort', 'scalar', 'abs_diff'),
+    ('local_ccoeff', 'scalar', 'abs_diff'),
+    # Global clustering coefficient
+    ('global_ccoeff', 'scalar', 'abs_diff'),
+    # Mixing parameter xi
+    ('mixing_xi', 'scalar', 'abs_diff'),
+    # Number of edges
+    ('n_edges', 'scalar', 'rel_diff'),
+    # Number of connected components
+    ('n_concomp', 'scalar', 'rel_diff'),
+    # Pseudo-diameter
+    ('diameter', 'scalar', 'rel_diff'),
 }
-
-# Expected input:
-# root
-# ├── {network}_{resolution}.csv
-
-# Output: output/{stat}_{stat_type}_{distance_type}.png
 
 if not output.exists():
     output.mkdir(parents=True)
@@ -68,7 +89,7 @@ for stat, stat_type, distance_type in stats:
                 continue
 
             network = network_resolution[:-len(resolution) - 1]
-            network_resolution = f'{network} 0{resolution}'
+            network_resolution = f'{network}\n{resolution}'
             all_network_resolutions.add(network_resolution)
 
             df = pd.read_csv(fp)
@@ -138,6 +159,7 @@ for stat, stat_type, distance_type in stats:
             label=labels[i],
         )
         ax.bar_label(t, padding=3, fmt='%.2f')
+        ax.margins(x=0.2)
 
     ax.set_yticks(xs)
     ax.set_yticklabels(xticklabels)
@@ -146,10 +168,10 @@ for stat, stat_type, distance_type in stats:
         ax.set_xlim(0.0, 1.0 + 0.1)
     elif distance_type == 'rpd':
         ax.set_xlim(-1.0 - 0.2, 1.0 + 0.2)
-    # else:
-        # ax.set_xlim(0.0)
+    # elif distance_type == 'abs_diff':
+    #     ax.set_xlim(0.0)
     ax.legend(fontsize='xx-large')
     ax.set_title(f'{distance_type} of {stat} ({stat_type})')
 
     fig.tight_layout()
-    plt.savefig(output / f'{stat}_{stat_type}_{distance_type}.png')
+    plt.savefig(output / f'{stat}_{stat_type}_{distance_type}.pdf')

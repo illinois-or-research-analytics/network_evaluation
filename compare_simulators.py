@@ -1,3 +1,22 @@
+# Expected structure:
+# root
+# ├── {network_id}
+# │   ├── {resolution}
+# │   │   ├── {replicate_id}
+# │   │   │   └── {COMP_FN}
+
+# Expected format of {COMP_FN}:
+# stat,stat_type,distance_type,distance
+
+# Output format:
+# {output_dir}/tables/{network_id}_{resolution}.csv
+# stat,stat_type,distance_type,distance_count_{name},distance_mean_{name},distance_std_{name} for name in names
+# for every (network, clustering) pair where there are at least two simulators producing at least one replicate each
+
+# {output_dir}/all_successes.csv
+# Network,Resolution,{name} for name in names
+# for every (network, clustering) pair
+
 import argparse
 from pathlib import Path
 from functools import reduce
@@ -6,7 +25,6 @@ import numpy as np
 import pandas as pd
 
 COMP_FN = 'compare_output.csv'
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -27,6 +45,16 @@ def parse_args():
         help='Output directory',
         required='True',
     )
+    parser.add_argument(
+        '--resolution',
+        help='Resolution to consider',
+        required='True',
+    )
+    parser.add_argument(
+        '--with-outliers',
+        action='store_true',
+        help='Include outliers',
+    )
     return parser.parse_args()
 
 
@@ -40,25 +68,10 @@ roots = [
 ]
 output_dir = Path(args.output_dir)
 
-# Expected structure:
-# root
-# ├── {network_id}
-# │   ├── leiden{resolution}
-# │   │   ├── {replicate_id}
-# │   │   │   └── {COMP_FN}
+RESOLUTIONS = [args.resolution]
+REP_ID_WHITELIST = [f'{i}' for i in range(11)]
 
-# Expected format of {COMP_FN}:
-# stat,stat_type,distance_type,distance
-
-# Output format:
-# {output_dir}/tables/{network_id}_{resolution}.csv
-# stat,stat_type,distance_type,distance_count_{name},distance_mean_{name},distance_std_{name} for name in names
-# for every (network, clustering) pair where there are at least two simulators producing at least one replicate each
-
-# {output_dir}/all_successes.csv
-# Network,Resolution,{name} for name in names
-# for every (network, clustering) pair
-
+print(f'Comparing {names} at {RESOLUTIONS}')
 
 output_dir.mkdir(exist_ok=True, parents=True)
 
@@ -76,7 +89,7 @@ all_resolutions = dict()
 for network_id in all_network_ids:
     resolutions = [
         set(
-            x.name.replace('leiden', '')
+            x.name
             for x in (root / network_id).iterdir()
         )
         if (root / network_id).exists()
@@ -89,7 +102,11 @@ for network_id in all_network_ids:
         resolutions,
     )
 
-    all_resolutions[network_id] = set()
+    all_resolutions[network_id] = {
+        resolution
+        for resolution in all_resolutions[network_id]
+        if resolution in RESOLUTIONS
+    }
 
 all_replicates = dict()
 for network_id in all_network_ids:
@@ -98,9 +115,10 @@ for network_id in all_network_ids:
         replicate_ids = [
             set(
                 x.name
-                for x in (root / network_id / f'leiden{resolution}').iterdir()
+                for x in (root / network_id / f'{resolution}').iterdir()
+                if x.name in REP_ID_WHITELIST
             )
-            if (root / network_id / f'leiden{resolution}').exists()
+            if (root / network_id / f'{resolution}').exists()
             else set()
             for root in roots
         ]
@@ -131,7 +149,7 @@ for network_id in all_network_ids:
             df = None
             for replicate_id in all_replicates[network_id][resolution]:
                 comp_root_fp = root / network_id / \
-                    f'leiden{resolution}' / replicate_id
+                    f'{resolution}' / replicate_id
 
                 if not comp_root_fp.exists():
                     continue
@@ -158,34 +176,30 @@ for network_id in all_network_ids:
             successes[network_id][resolution].append(ratio_successes)
             comp_results[network_id][resolution].append(df)
 
-#
-
-df_successes = pd.DataFrame(
-    [
-        [
-            network_id,
-            resolution,
-            *successes[network_id][resolution],
-        ]
-        for network_id in all_network_ids
-        for resolution in all_resolutions[network_id]
-    ],
-    columns=[
-        'Network',
-        'Resolution',
-        *names,
-    ],
-)
-df_successes = df_successes.sort_values(
-    by=['Network', 'Resolution'],
-)
-df_successes.to_csv(
-    output_dir / 'successes.csv',
-    index=False,
-    float_format='%.2f',
-)
-
-#
+# df_successes = pd.DataFrame(
+#     [
+#         [
+#             network_id,
+#             resolution,
+#             *successes[network_id][resolution],
+#         ]
+#         for network_id in all_network_ids
+#         for resolution in all_resolutions[network_id]
+#     ],
+#     columns=[
+#         'Network',
+#         'Resolution',
+#         *names,
+#     ],
+# )
+# df_successes = df_successes.sort_values(
+#     by=['Network', 'Resolution'],
+# )
+# df_successes.to_csv(
+#     output_dir / 'successes.csv',
+#     index=False,
+#     float_format='%.2f',
+# )
 
 comparable_pairs = {
     (network_id, resolution)
@@ -232,8 +246,6 @@ for network_id, resolution in comparable_pairs:
                 grouped_df,
                 on=['stat', 'stat_type', 'distance_type'],
             )
-
-    print(f'{network_id} {resolution}')
 
     agg_df.to_csv(
         output_tables_dir / f'{network_id}_{resolution}.csv',

@@ -1,3 +1,22 @@
+# Expected structure:
+# root
+# ├── {network_id}
+# │   ├── {resolution}
+# │   │   ├── {replicate_id}
+# │   │   │   └── {COMP_FN}
+
+# Expected format of {COMP_FN}:
+# stat,stat_type,distance_type,distance
+
+# Output format:
+# {output_dir}/tables/{network_id}_{resolution}.csv
+# stat,stat_type,distance_type,distance_count_{name},distance_mean_{name},distance_std_{name} for name in names
+# for every (network, clustering) pair where there are at least two simulators producing at least one replicate each
+
+# {output_dir}/all_successes.csv
+# Network,Resolution,{name} for name in names
+# for every (network, clustering) pair
+
 import argparse
 from pathlib import Path
 from functools import reduce
@@ -7,6 +26,10 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+GOAL_N_REPLICATES = 11
+
+SHOWFLIERS = False
+
 COMP_FN = 'compare_output.csv'
 
 MINMAX_BOUNDED_SCALARS = {
@@ -15,11 +38,6 @@ MINMAX_BOUNDED_SCALARS = {
     'global_ccoeff': (-1, 1),
     'mixing_xi': (-1, 1),
 }
-
-RESOLUTIONS = [
-    '.001'
-]
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -41,6 +59,11 @@ def parse_args():
         required='True',
     )
     parser.add_argument(
+        '--resolution',
+        help='Resolution to consider',
+        required='True',
+    )
+    parser.add_argument(
         '--with-outliers',
         action='store_true',
         help='Include outliers',
@@ -49,6 +72,8 @@ def parse_args():
 
 
 args = parse_args()
+
+RESOLUTIONS = [args.resolution]
 
 cluster_seq_stats = [
     # Minimum cut size (cluster)
@@ -61,6 +86,9 @@ vertex_seq_stats = [
     ('degree', 'sequence', 'rmse'),
     # Mixing parameter mu (vertex)
     ('mixing_mus', 'sequence', 'rmse'),
+] if not args.with_outliers else [
+    # Degree (vertex)
+    ('degree', 'sequence', 'rmse'),
 ]
 distr_stats = [
     # Minimum cut size (cluster)
@@ -75,8 +103,6 @@ distr_stats = [
 ] if not args.with_outliers else [
     # Degree (vertex)
     ('degree', 'distribution', 'ks'),
-    # Mixing parameter mu (vertex)
-    ('mixing_mus', 'distribution', 'ks'),
 ]
 bounded_scalar_stats = [
     # Degree assortativity
@@ -93,14 +119,27 @@ bounded_scalar_stats = [
     # TODO: Not implemented
     # Fraction of nodes in the largest component
     # TODO: Not implemented
+] if not args.with_outliers else [
+    # Degree assortativity
+    ('deg_assort', 'scalar', 'abs_diff'),
+    # Mean local clustering coefficient
+    ('local_ccoeff', 'scalar', 'abs_diff'),
+    # Global clustering coefficient
+    ('global_ccoeff', 'scalar', 'abs_diff'),
+    # Node percolation profile (random removal)
+    # TODO: Not implemented
+    # Node percolation profile (targeted removal)
+    # TODO: Not implemented
+    # Fraction of nodes in the largest component
+    # TODO: Not implemented
 ]
 positive_scalar_stats = [
     # Number of edges
-    ('n_edges', 'scalar', 'rpd'),
+    ('n_edges', 'scalar', 'rel_diff'),
     # Number of connected components
-    ('n_concomp', 'scalar', 'rpd'),
+    ('n_concomp', 'scalar', 'rel_diff'),
     # Pseudo-diameter
-    ('diameter', 'scalar', 'rpd'),
+    ('diameter', 'scalar', 'rel_diff'),
     # Mean k-core
     # TODO: Not implemented
     # Leading eigenvalue of adjacency matrix
@@ -131,27 +170,9 @@ roots = [
 ]
 output_dir = Path(args.output_dir)
 
-# Expected structure:
-# root
-# ├── {network_id}
-# │   ├── leiden{resolution}
-# │   │   ├── {replicate_id}
-# │   │   │   └── {COMP_FN}
-
-# Expected format of {COMP_FN}:
-# stat,stat_type,distance_type,distance
-
-# Output format:
-# {output_dir}/tables/{network_id}_{resolution}.csv
-# stat,stat_type,distance_type,distance_count_{name},distance_mean_{name},distance_std_{name} for name in names
-# for every (network, clustering) pair where there are at least two simulators producing at least one replicate each
-
-# {output_dir}/all_successes.csv
-# Network,Resolution,{name} for name in names
-# for every (network, clustering) pair
-
-
 output_dir.mkdir(exist_ok=True, parents=True)
+
+print(f'Comparing {names} at {RESOLUTIONS}')
 
 # Collect all network IDs
 network_ids = [
@@ -172,9 +193,9 @@ for network_id in all_network_ids:
         replicate_ids = [
             set(
                 x.name
-                for x in (root / network_id / f'leiden{resolution}').iterdir()
+                for x in (root / network_id / f'{resolution}').iterdir()
             )
-            if (root / network_id / f'leiden{resolution}').exists()
+            if (root / network_id / f'{resolution}').exists()
             else set()
             for root in roots
         ]
@@ -184,6 +205,14 @@ for network_id in all_network_ids:
             replicate_ids,
         )
 
+all_network_ids = [
+    network_id
+    for network_id in all_network_ids
+    if any(
+        len(all_replicates[network_id][resolution]) > 0
+        for resolution in RESOLUTIONS
+    )
+]
 
 comp_results = dict()
 successes = dict()
@@ -203,9 +232,10 @@ for network_id in all_network_ids:
             n_replicates = 0
 
             df = None
+            
             for replicate_id in all_replicates[network_id][resolution]:
                 comp_root_fp = root / network_id / \
-                    f'leiden{resolution}' / replicate_id
+                    f'{resolution}' / replicate_id
 
                 if not comp_root_fp.exists():
                     continue
@@ -229,8 +259,13 @@ for network_id in all_network_ids:
                     df = pd.concat([df, df_tmp])
 
             ratio_successes = n_successes / n_replicates if n_successes > 0 else 0.0
+
+            if n_replicates < GOAL_N_REPLICATES:
+                print(f'[NREPS] {root} {network_id} {resolution} {n_successes}')
+
             if ratio_successes < 1.0:
-                print(f'{root} {network_id} {resolution} {ratio_successes}')
+                print(f'[NSUCS] {root} {network_id} {resolution} {ratio_successes}')
+                
             successes[network_id][resolution].append(ratio_successes)
             comp_results[network_id][resolution].append(df)
 
@@ -263,7 +298,7 @@ comparable_pairs = [
     (network_id, resolution)
     for network_id in all_network_ids
     for resolution in RESOLUTIONS
-    if (np.array(successes[network_id][resolution]) > 0).sum() > 1 and resolution in RESOLUTIONS
+    if (np.array(successes[network_id][resolution]) > 0).sum() > 1
 ]
 
 agg = dict()
@@ -283,7 +318,7 @@ for network_id, resolution in comparable_pairs:
             if len(df_tmp['distance'].values) > 0:
                 val = df_tmp['distance'].values.mean()
             else:
-                print(stat, network_id, resolution, name)
+                print(stat, stat_type, distance_type, network_id, resolution, name)
                 continue
 
             agg.setdefault(
@@ -300,7 +335,7 @@ for (stat, stat_type, distance_type) in distr_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        network_resolution = f'{network_id}\n{resolution}'
         for sim_name, distance in data.items():
             df_list.append(
                 [stat_id, sim_name, network_resolution, distance]
@@ -311,20 +346,25 @@ df = pd.DataFrame(
         'Stat',
         'Simulator',
         'Network',
-        'Distance',
+        'Distance (KS)',
     ]
 )
-fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(distr_stats), 5))
+fig, ax = plt.subplots(
+    1, 1, 
+    dpi=150, 
+    figsize=(3 * len(distr_stats), 5)
+)
 ax = sns.boxplot(
     x='Stat',
-    y='Distance',
+    y='Distance (KS)',
     hue='Simulator',
     data=df,
+    showfliers=True,
 )
-ax.set_ylim(-0.1, 1.1)
-plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+ax.set_ylim(0., 1.)
+# plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_distr.png')
+fig.savefig(output_dir / 'boxplot_distr.pdf')
 
 # Visualize positive scalar statistics
 df_list = []
@@ -332,31 +372,61 @@ for (stat, stat_type, distance_type) in positive_scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        network_resolution = f'{network_id}\n{resolution}'
         for sim_name, distance in data.items():
-            df_list.append(
-                [stat_id, sim_name, network_resolution, distance]
-            )
+            df_list.append([
+                stat_id, 
+                sim_name, 
+                network_resolution, 
+                distance,
+            ])
 df = pd.DataFrame(
     df_list,
     columns=[
         'Stat',
         'Simulator',
         'Network',
-        'Distance',
+        'Distance (SRD)',
     ]
 )
-fig, ax = plt.subplots(1, 1, dpi=150, figsize=(2 * len(distr_stats), 5))
-ax = sns.boxplot(
-    x='Stat',
-    y='Distance',
-    hue='Simulator',
-    data=df,
+selection = [
+    stat
+    for (stat, _, _) in positive_scalar_stats
+]
+fig, axes = plt.subplots(
+    1, len(selection), 
+    dpi=150,
+    figsize=(3 * len(selection), 5),
 )
-ax.set_ylim(-1.1, 1.1)
-plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+for i, col in enumerate(selection):
+    values = df[df['Stat'] == col]
+    ax = sns.boxplot(
+        x='Stat',
+        y='Distance (SRD)',
+        hue='Simulator',
+        data=values,
+        ax=axes.flatten()[i],
+        showfliers=SHOWFLIERS,
+    )
+    ax.legend(
+        bbox_to_anchor=(0, 1.02, 1, 0.2), 
+        loc="lower left",
+        ncol=1, 
+        fancybox=True,
+    )
+
+    # lb = values['Distance (SRD)'].quantile(0.1)
+    # ub = values['Distance (SRD)'].quantile(0.9)
+    # ax.set_ylim(lb, ub)
+
+    ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+
+    if i != 0:
+        ax.set_ylabel('')
+    if i != len(selection) - 1:
+        ax.legend_.remove()
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_positive_scalar.png')
+fig.savefig(output_dir / 'boxplot_positive_scalar.pdf')
 
 # Visualize bounded scalar statistics
 df_list = []
@@ -364,7 +434,7 @@ for (stat, stat_type, distance_type) in bounded_scalar_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        network_resolution = f'{network_id}\n{resolution}'
         for sim_name, distance in data.items():
             df_list.append(
                 [stat_id, sim_name, network_resolution, distance]
@@ -375,7 +445,7 @@ df = pd.DataFrame(
         'Stat',
         'Simulator',
         'Network',
-        'Distance',
+        'Distance (SAD)',
     ]
 )
 selection = [
@@ -388,20 +458,25 @@ for i, col in enumerate(selection):
     values = df[df['Stat'] == col]
     ax = sns.boxplot(
         x='Stat',
-        y='Distance',
+        y='Distance (SAD)',
         hue='Simulator',
         data=values,
         ax=axes.flatten()[i],
+        showfliers=True,
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
+    
     lb, ub = MINMAX_BOUNDED_SCALARS[col]
     ax.set_ylim(lb - 0.1, ub + 0.1)
     ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+
+    if i != 0:
+        ax.set_ylabel('')
     if i != len(selection) - 1:
         ax.legend_.remove()
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_bounded_scalar.png')
+fig.savefig(output_dir / 'boxplot_bounded_scalar.pdf')
 
 # Visualize cluster sequence statistics
 df_list = []
@@ -409,7 +484,7 @@ for (stat, stat_type, distance_type) in cluster_seq_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        network_resolution = f'{network_id}\n{resolution}'
         for sim_name, distance in data.items():
             df_list.append(
                 [stat_id, sim_name, network_resolution, distance]
@@ -420,7 +495,7 @@ df = pd.DataFrame(
         'Stat',
         'Simulator',
         'Network',
-        'Distance',
+        'Distance (RMSE)',
     ]
 )
 selection = [
@@ -433,19 +508,24 @@ for i, col in enumerate(selection):
     values = df[df['Stat'] == col]
     ax = sns.boxplot(
         x='Stat',
-        y='Distance',
+        y='Distance (RMSE)',
         hue='Simulator',
         data=values,
         ax=axes.flatten()[i],
+        showfliers=SHOWFLIERS,
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
-    ax.set_ylim(0.0, values['Distance'].max() + 0.1)
-    # ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+    
+    # ub = values['Distance (RMSE)'].quantile(0.9)
+    # ax.set_ylim(0.0, ub)
+
+    if i != 0:
+        ax.set_ylabel('')
     if i != len(selection) - 1:
         ax.legend_.remove()
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_cluster_seq.png')
+fig.savefig(output_dir / 'boxplot_cluster_seq.pdf')
 
 # Visualize vertex sequence statistics
 df_list = []
@@ -453,7 +533,7 @@ for (stat, stat_type, distance_type) in vertex_seq_stats:
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n$r=0{resolution}$'
+        network_resolution = f'{network_id}\n{resolution}'
         for sim_name, distance in data.items():
             df_list.append(
                 [stat_id, sim_name, network_resolution, distance]
@@ -464,7 +544,7 @@ df = pd.DataFrame(
         'Stat',
         'Simulator',
         'Network',
-        'Distance',
+        'Distance (RMSE)',
     ]
 )
 selection = [
@@ -477,16 +557,21 @@ for i, col in enumerate(selection):
     values = df[df['Stat'] == col]
     ax = sns.boxplot(
         x='Stat',
-        y='Distance',
+        y='Distance (RMSE)',
         hue='Simulator',
         data=values,
-        ax=axes.flatten()[i],
+        ax=axes.flatten()[i] if len(selection) > 1 else axes,
+        showfliers = SHOWFLIERS,
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
-    ax.set_ylim(0.0, values['Distance'].max() + 0.1)
-    # ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+    
+    # ub = values['Distance (RMSE)'].quantile(0.9)
+    # ax.set_ylim(0.0, ub)
+
+    if i != 0:
+        ax.set_ylabel('')
     if i != len(selection) - 1:
         ax.legend_.remove()
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_vertex_seq.png')
+fig.savefig(output_dir / 'boxplot_vertex_seq.pdf')
