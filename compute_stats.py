@@ -613,14 +613,20 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
     for node1, node2 in graph.iterEdges():
         n1 = str(node_mapping_dict_reversed.get(node1))
         n2 = str(node_mapping_dict_reversed.get(node2))
-        if n1 not in clustering_dict or n2 not in clustering_dict:
+        if n1 not in clustering_dict and n2 not in clustering_dict:
             continue
+        elif n1 not in clustering_dict or n2 not in clustering_dict:
+            out_degree[node1] += 1
+            out_degree[node2] += 1
+            continue
+
         if clustering_dict[n1] == clustering_dict[n2]:  # nodes are co-clustered
             in_degree[node1] += 1
             in_degree[node2] += 1
         else:
             out_degree[node1] += 1
             out_degree[node2] += 1
+            
     mus = [
         out_degree[i]/(out_degree[i] + in_degree[i])
         if (out_degree[i] + in_degree[i]) != 0
@@ -629,7 +635,10 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
     ]
 
     outs = [out_degree[i] for i in graph.iterNodes()]
-    xi = np.sum(outs) / 2 / (graph.numberOfEdges())
+    totals = [in_degree[i] + out_degree[i] for i in graph.iterNodes()]
+    xi = np.sum(outs) / np.sum(totals)
+    
+    # xi = np.sum(outs) / 2 / (graph.numberOfEdges())
 
     return mus, xi
 
