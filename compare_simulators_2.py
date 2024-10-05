@@ -26,11 +26,25 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+Q = 1.0
+
 GOAL_N_REPLICATES = 11
 
-SHOWFLIERS = False
+SHOWFLIERS = True
 
-COMP_FN = 'compare_output.csv'
+NETWORK_WHITELIST = (
+    'cit_hepph',
+    'cit_patents',
+    'wiki_talk',
+    'wiki_topcats',
+    'orkut',
+    'cen',
+)
+
+COMP_FNS = [
+    'compare_output.csv',
+    'compare_stats.csv',
+]
 
 MINMAX_BOUNDED_SCALARS = {
     'deg_assort': (-2, 2),
@@ -212,6 +226,11 @@ all_network_ids = [
         len(all_replicates[network_id][resolution]) > 0
         for resolution in RESOLUTIONS
     )
+    and network_id in (
+        NETWORK_WHITELIST 
+        if NETWORK_WHITELIST is not None 
+        else all_network_ids
+    )
 ]
 
 comp_results = dict()
@@ -242,9 +261,15 @@ for network_id in all_network_ids:
 
                 n_replicates += 1
 
-                comp_fp = comp_root_fp / COMP_FN
+                found_comp_fp = False
+                for comp_fn in COMP_FNS:
+                    comp_fp = comp_root_fp / comp_fn
 
-                if not comp_fp.exists():
+                    if comp_fp.exists():
+                        found_comp_fp = True
+                        break
+                
+                if not found_comp_fp:
                     continue
 
                 n_successes += 1
@@ -415,9 +440,10 @@ for i, col in enumerate(selection):
         fancybox=True,
     )
 
-    # lb = values['Distance (SRD)'].quantile(0.1)
-    # ub = values['Distance (SRD)'].quantile(0.9)
-    # ax.set_ylim(lb, ub)
+    if SHOWFLIERS:
+        lb = values['Distance (SRD)'].quantile(1-Q)
+        ub = values['Distance (SRD)'].quantile(Q)
+        ax.set_ylim(lb, ub)
 
     ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 
@@ -517,8 +543,9 @@ for i, col in enumerate(selection):
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
     
-    # ub = values['Distance (RMSE)'].quantile(0.9)
-    # ax.set_ylim(0.0, ub)
+    if SHOWFLIERS:
+        ub = values['Distance (RMSE)'].quantile(Q)
+        ax.set_ylim(0.0, ub)
 
     if i != 0:
         ax.set_ylabel('')
@@ -566,8 +593,9 @@ for i, col in enumerate(selection):
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
     
-    # ub = values['Distance (RMSE)'].quantile(0.9)
-    # ax.set_ylim(0.0, ub)
+    if SHOWFLIERS:
+        ub = values['Distance (RMSE)'].quantile(Q)
+        ax.set_ylim(0.0, ub)
 
     if i != 0:
         ax.set_ylabel('')
