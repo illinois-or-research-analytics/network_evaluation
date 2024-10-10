@@ -99,6 +99,7 @@ def compare_scalars(
     ).intersection(
         network_2_stats.keys()
     )
+    common_stats = sorted(common_stats)
 
     diff_dict = dict()
     for name in common_stats:
@@ -161,6 +162,7 @@ def compare_distributions(
     ).intersection(
         network_2_stats.keys()
     )
+    common_stats = sorted(common_stats)
 
     diff_dict = dict()
     for name in common_stats:
@@ -261,6 +263,7 @@ def compare_sequences(
     ).intersection(
         network_2_stats.keys()
     )
+    common_stats = sorted(common_stats)
 
     diff_dict = dict()
     for name in common_stats:
