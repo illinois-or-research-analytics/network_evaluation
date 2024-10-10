@@ -458,6 +458,10 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         f'Total time taken: {time.perf_counter() - job_start_time:.3f} seconds'
     )
 
+    # Save done file
+    with open(dir_path / 'done', 'w') as f:
+        f.write('done')
+
 
 def prepare_logging(output_folder, is_overwrite):
     logging.basicConfig(
@@ -626,7 +630,7 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
         else:
             out_degree[node1] += 1
             out_degree[node2] += 1
-            
+
     mus = [
         out_degree[i]/(out_degree[i] + in_degree[i])
         if (out_degree[i] + in_degree[i]) != 0
@@ -637,7 +641,7 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
     outs = [out_degree[i] for i in graph.iterNodes()]
     totals = [in_degree[i] + out_degree[i] for i in graph.iterNodes()]
     xi = np.sum(outs) / np.sum(totals)
-    
+
     # xi = np.sum(outs) / 2 / (graph.numberOfEdges())
 
     return mus, xi

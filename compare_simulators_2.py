@@ -32,14 +32,7 @@ GOAL_N_REPLICATES = 11
 
 SHOWFLIERS = True
 
-NETWORK_WHITELIST = (
-    'cit_hepph',
-    'cit_patents',
-    'wiki_talk',
-    'wiki_topcats',
-    'orkut',
-    'cen',
-)
+NETWORK_WHITELIST = None
 
 COMP_FNS = [
     'compare_output.csv',
@@ -52,6 +45,7 @@ MINMAX_BOUNDED_SCALARS = {
     'global_ccoeff': (-1, 1),
     'mixing_xi': (-1, 1),
 }
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -227,8 +221,8 @@ all_network_ids = [
         for resolution in RESOLUTIONS
     )
     and network_id in (
-        NETWORK_WHITELIST 
-        if NETWORK_WHITELIST is not None 
+        NETWORK_WHITELIST
+        if NETWORK_WHITELIST is not None
         else all_network_ids
     )
 ]
@@ -251,7 +245,7 @@ for network_id in all_network_ids:
             n_replicates = 0
 
             df = None
-            
+
             for replicate_id in all_replicates[network_id][resolution]:
                 comp_root_fp = root / network_id / \
                     f'{resolution}' / replicate_id
@@ -268,7 +262,7 @@ for network_id in all_network_ids:
                     if comp_fp.exists():
                         found_comp_fp = True
                         break
-                
+
                 if not found_comp_fp:
                     continue
 
@@ -286,11 +280,13 @@ for network_id in all_network_ids:
             ratio_successes = n_successes / n_replicates if n_successes > 0 else 0.0
 
             if n_replicates < GOAL_N_REPLICATES:
-                print(f'[NREPS] {root} {network_id} {resolution} {n_successes}')
+                print(f'[NREPS] {root} {network_id} {
+                      resolution} {n_successes}')
 
             if ratio_successes < 1.0:
-                print(f'[NSUCS] {root} {network_id} {resolution} {ratio_successes}')
-                
+                print(f'[NSUCS] {root} {network_id} {
+                      resolution} {ratio_successes}')
+
             successes[network_id][resolution].append(ratio_successes)
             comp_results[network_id][resolution].append(df)
 
@@ -343,7 +339,8 @@ for network_id, resolution in comparable_pairs:
             if len(df_tmp['distance'].values) > 0:
                 val = df_tmp['distance'].values.mean()
             else:
-                print(stat, stat_type, distance_type, network_id, resolution, name)
+                print(stat, stat_type, distance_type,
+                      network_id, resolution, name)
                 continue
 
             agg.setdefault(
@@ -375,8 +372,8 @@ df = pd.DataFrame(
     ]
 )
 fig, ax = plt.subplots(
-    1, 1, 
-    dpi=150, 
+    1, 1,
+    dpi=150,
     figsize=(3 * len(distr_stats), 5)
 )
 ax = sns.boxplot(
@@ -400,9 +397,9 @@ for (stat, stat_type, distance_type) in positive_scalar_stats:
         network_resolution = f'{network_id}\n{resolution}'
         for sim_name, distance in data.items():
             df_list.append([
-                stat_id, 
-                sim_name, 
-                network_resolution, 
+                stat_id,
+                sim_name,
+                network_resolution,
                 distance,
             ])
 df = pd.DataFrame(
@@ -419,7 +416,7 @@ selection = [
     for (stat, _, _) in positive_scalar_stats
 ]
 fig, axes = plt.subplots(
-    1, len(selection), 
+    1, len(selection),
     dpi=150,
     figsize=(3 * len(selection), 5),
 )
@@ -434,9 +431,9 @@ for i, col in enumerate(selection):
         showfliers=SHOWFLIERS,
     )
     ax.legend(
-        bbox_to_anchor=(0, 1.02, 1, 0.2), 
+        bbox_to_anchor=(0, 1.02, 1, 0.2),
         loc="lower left",
-        ncol=1, 
+        ncol=1,
         fancybox=True,
     )
 
@@ -492,7 +489,7 @@ for i, col in enumerate(selection):
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
-    
+
     lb, ub = MINMAX_BOUNDED_SCALARS[col]
     ax.set_ylim(lb - 0.1, ub + 0.1)
     ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
@@ -542,7 +539,7 @@ for i, col in enumerate(selection):
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
-    
+
     if SHOWFLIERS:
         ub = values['Distance (RMSE)'].quantile(Q)
         ax.set_ylim(0.0, ub)
@@ -588,11 +585,11 @@ for i, col in enumerate(selection):
         hue='Simulator',
         data=values,
         ax=axes.flatten()[i] if len(selection) > 1 else axes,
-        showfliers = SHOWFLIERS,
+        showfliers=SHOWFLIERS,
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)
-    
+
     if SHOWFLIERS:
         ub = values['Distance (RMSE)'].quantile(Q)
         ax.set_ylim(0.0, ub)
