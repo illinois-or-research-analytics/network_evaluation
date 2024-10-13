@@ -30,8 +30,6 @@ Q = 1.0
 
 GOAL_N_REPLICATES = 11
 
-SHOWFLIERS = True
-
 NETWORK_WHITELIST = None
 
 COMP_FNS = [
@@ -72,6 +70,11 @@ def parse_args():
         required='True',
     )
     parser.add_argument(
+        '--show-fliers',
+        action='store_true',
+        help='Show fliers',
+    )
+    parser.add_argument(
         '--with-outliers',
         action='store_true',
         help='Include outliers',
@@ -82,6 +85,7 @@ def parse_args():
 args = parse_args()
 
 RESOLUTIONS = [args.resolution]
+SHOWFLIERS = args.show_fliers
 
 cluster_seq_stats = [
     # Minimum cut size (cluster)
@@ -319,7 +323,7 @@ comparable_pairs = [
     (network_id, resolution)
     for network_id in all_network_ids
     for resolution in RESOLUTIONS
-    if (np.array(successes[network_id][resolution]) > 0).sum() > 1
+    if (np.array(successes[network_id][resolution]) > 0).sum() == len(names)
 ]
 
 agg = dict()
