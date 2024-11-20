@@ -400,11 +400,11 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
         n_disconnected_clusters = \
             int((cluster_stats['connectivity'] < 1).sum())
         ratio_disconnected_clusters = \
-            n_disconnected_clusters / n_clusters
+            n_disconnected_clusters / n_clusters if n_clusters > 0 else 0
         n_wellconnected_clusters = \
             int((cluster_stats['connectivity_normalized_log10(n)'] > 1).sum())
         ratio_wellconnected_clusters = \
-            n_wellconnected_clusters / n_clusters
+            n_wellconnected_clusters / n_clusters if n_clusters > 0 else 0
         scalar_stats['n_disconnects'] = n_disconnected_clusters
         scalar_stats['ratio_disconnected_clusters'] = ratio_disconnected_clusters
         scalar_stats['n_wellconnected_clusters'] = n_wellconnected_clusters
@@ -578,6 +578,7 @@ def get_outliers(graph, node_mapping, clustering_dict):
     clustered_nodes = [
         node_mapping[u]
         for u in clustering_dict.keys()
+        # if u in node_mapping
     ]
     nodes_set = set(graph.iterNodes())
     outlier_nodes = nodes_set.difference(clustered_nodes)
@@ -648,6 +649,8 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
 
 
 def compute_diameter(graph):
+    if graph.numberOfNodes() == 0:
+        return 0
     connected_graph = \
         nk.components.ConnectedComponents.extractLargestConnectedComponent(
             graph, True)
