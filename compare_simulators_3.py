@@ -53,7 +53,7 @@ VERTEX_SEQ_STATS_WITHOUT_OUTLIERS = [
     # Degree (vertex)
     ('degree', 'sequence', 'rmse'),
     # Mixing parameter mu (vertex)
-    ('mixing_mus', 'sequence', 'rmse'),
+    # ('mixing_mus', 'sequence', 'rmse'),
 ]
 VERTEX_SEQ_STATS_WITH_OUTLIERS = [
     # Degree (vertex)
@@ -61,14 +61,14 @@ VERTEX_SEQ_STATS_WITH_OUTLIERS = [
 ]
 DISTR_STATS_WITHOUT_OUTLIERS = [
     # Minimum cut size (cluster)
-    ('mincuts', 'distribution', 'ks'),
+    # ('mincuts', 'distribution', 'ks'),
     # Number of internal edges (cluster)
-    ('c_edges', 'distribution', 'ks'),
+    # ('c_edges', 'distribution', 'ks'),
 
     # Degree (vertex)
     ('degree', 'distribution', 'ks'),
     # Mixing parameter mu (vertex)
-    ('mixing_mus', 'distribution', 'ks'),
+    # ('mixing_mus', 'distribution', 'ks'),
 ]
 DISTR_STATS_WITH_OUTLIERS = [
     # Degree (vertex)
@@ -82,7 +82,7 @@ BOUNDED_SCALAR_STATS_WITHOUT_OUTLIERS = [
     # Global clustering coefficient
     ('global_ccoeff', 'scalar', 'abs_diff'),
     # Mixing parameter xi
-    ('mixing_xi', 'scalar', 'abs_diff'),
+    # ('mixing_xi', 'scalar', 'abs_diff'),
     # Node percolation profile (random removal)
     # TODO: Not implemented
     # Node percolation profile (targeted removal)
@@ -224,6 +224,7 @@ resolutions = args.resolutions
 
 output_dir = Path(args.output_dir)
 output_dir.mkdir(exist_ok=True, parents=True)
+print(f'Comparing {names}')
 
 # ==============================================================================
 
@@ -261,6 +262,7 @@ for network_id in all_network_ids:
 
     for (name, root, resolution) in zip(names, roots, resolutions):
         if not (root / network_id / resolution).exists():
+            print(f'[MISSING] {root} {network_id} {resolution}')
             continue
 
         n_successes = 0

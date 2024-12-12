@@ -28,20 +28,16 @@ import matplotlib.pyplot as plt
 
 Q = 1.0
 
-GOAL_N_REPLICATES = 11
-
-NETWORK_WHITELIST = None
-
 COMP_FNS = [
     'compare_output.csv',
     'compare_stats.csv',
 ]
 
 MINMAX_BOUNDED_SCALARS = {
-    'deg_assort': (-2, 2),
-    'local_ccoeff': (-1, 1),
-    'global_ccoeff': (-1, 1),
-    'mixing_xi': (-1, 1),
+    'deg_assort': (-0.4, 0.4),
+    'local_ccoeff': (-0.5, 0.5),
+    'global_ccoeff': (-0.5, 0.5),
+    'mixing_xi': (-0.15, 0.15),
 }
 
 
@@ -79,6 +75,16 @@ def parse_args():
         action='store_true',
         help='Include outliers',
     )
+    parser.add_argument(
+        '--network-whitelist-fp',
+        help='Network whitelist file path',
+        required=False,
+        default=None,
+    )
+    parser.add_argument(
+        '--num-replicates',
+        help='Number of replicates to consider',
+    )
     return parser.parse_args()
 
 
@@ -86,6 +92,12 @@ args = parse_args()
 
 RESOLUTIONS = [args.resolution]
 SHOWFLIERS = args.show_fliers
+
+NETWORK_WHITELIST = None \
+    if args.network_whitelist_fp is None \
+    else list(pd.read_csv(args.network_whitelist_fp, header=None)[0])
+
+GOAL_N_REPLICATES = int(args.num_replicates)
 
 cluster_seq_stats = [
     # Minimum cut size (cluster)
@@ -217,6 +229,13 @@ for network_id in all_network_ids:
             replicate_ids,
         )
 
+        all_replicates[network_id][resolution] = [
+            x
+            for x in all_replicates[network_id][resolution]
+            if int(x) < GOAL_N_REPLICATES
+        ]
+
+
 all_network_ids = [
     network_id
     for network_id in all_network_ids
@@ -329,11 +348,21 @@ comparable_pairs = [
 agg = dict()
 for network_id, resolution in comparable_pairs:
     dfs = comp_results[network_id][resolution]
-    for name, df in zip(names, dfs):
-        if df is None:
-            continue
+    for stat, stat_type, distance_type in stats:
+        agg.setdefault(
+            (stat, stat_type, distance_type),
+            dict(),
+        ).setdefault(
+            (network_id, resolution),
+            dict(),
+        )
 
-        for stat, stat_type, distance_type in stats:
+        for name, df in zip(names, dfs):
+            if df is None:
+                print(f'[MISSING] {stat} {stat_type} {
+                      distance_type} {network_id} {resolution} {name}')
+                continue
+
             df_tmp = df.loc[
                 (df['stat'] == stat)
                 & (df['stat_type'] == stat_type)
@@ -343,17 +372,12 @@ for network_id, resolution in comparable_pairs:
             if len(df_tmp['distance'].values) > 0:
                 val = df_tmp['distance'].values.mean()
             else:
-                print(stat, stat_type, distance_type,
-                      network_id, resolution, name)
+                print(f'[EMPTY] {stat} {stat_type} {
+                      distance_type} {network_id} {resolution} {name}')
                 continue
 
-            agg.setdefault(
-                (stat, stat_type, distance_type),
-                dict(),
-            ).setdefault(
-                (network_id, resolution),
-                dict(),
-            )[name] = val
+            agg[(stat, stat_type, distance_type)][(
+                network_id, resolution)][name] = val
 
 # Visualize distribution statistics
 df_list = []
