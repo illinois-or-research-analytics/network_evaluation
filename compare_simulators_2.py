@@ -409,7 +409,7 @@ ax = sns.boxplot(
     y='Distance (KS)',
     hue='Simulator',
     data=df,
-    showfliers=True,
+    showfliers=SHOWFLIERS,
 )
 ax.set_ylim(0., 1.)
 # plt.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
@@ -474,8 +474,12 @@ for i, col in enumerate(selection):
 
     if i != 0:
         ax.set_ylabel('')
-    if i != len(selection) - 1:
-        ax.legend_.remove()
+    ax.legend_.remove()
+    # if i != len(selection) - 1:
+    #     ax.legend_.remove()
+# ax.legend_.remove()
+handles, labels = axes[0].get_legend_handles_labels()
+fig.legend(handles, labels, loc='upper center', ncol=len(names))
 fig.tight_layout()
 fig.savefig(output_dir / 'boxplot_positive_scalar.pdf')
 
@@ -513,7 +517,7 @@ for i, col in enumerate(selection):
         hue='Simulator',
         data=values,
         ax=axes.flatten()[i],
-        showfliers=True,
+        showfliers=SHOWFLIERS,
     )
     ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
               ncol=1, fancybox=True)

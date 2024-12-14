@@ -578,7 +578,7 @@ def get_outliers(graph, node_mapping, clustering_dict):
     clustered_nodes = [
         node_mapping[u]
         for u in clustering_dict.keys()
-        # if u in node_mapping
+        if u in node_mapping
     ]
     nodes_set = set(graph.iterNodes())
     outlier_nodes = nodes_set.difference(clustered_nodes)
@@ -634,16 +634,16 @@ def compute_mixing_params(graph, clustering_dict, node_mapping_dict_reversed, no
 
     mus = [
         out_degree[i]/(out_degree[i] + in_degree[i])
-        if (out_degree[i] + in_degree[i]) != 0
+        if out_degree[i] > 0
         else 0
         for i in node_order
     ]
 
     outs = [out_degree[i] for i in graph.iterNodes()]
     totals = [in_degree[i] + out_degree[i] for i in graph.iterNodes()]
-    xi = np.sum(outs) / np.sum(totals)
-
-    # xi = np.sum(outs) / 2 / (graph.numberOfEdges())
+    outs_sum = np.sum(outs)
+    totals_sum = np.sum(totals)
+    xi = outs_sum / totals_sum if outs_sum > 0 else 0
 
     return mus, xi
 
