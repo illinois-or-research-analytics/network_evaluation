@@ -22,6 +22,10 @@ def compute_statistic(stat_name, compute_fn, gt_stats, overwrite=False):
     return result
 
 
+def mean_degree(G):
+    return np.mean([v.out_degree() for v in G.vertices()])
+
+
 def degree_assortativity(G):
     deg_assort, _ = gt.scalar_assortativity(G, 'total')
     return deg_assort
@@ -140,6 +144,7 @@ else:
     gt_stats = dict()
 
 statistics_functions = {
+    # 'mean_degree': mean_degree,
     'deg_assort': degree_assortativity,
     'mean_kcore': mean_kcore_value,
     'local_ccoeff': local_clustering_coefficient,
@@ -162,6 +167,7 @@ if not is_overwrite:
         exit(0)
 
 # Load the graph
+start = time.perf_counter()
 G = gt.load_graph_from_csv(
     str(network_fp),
     directed=False,
@@ -169,8 +175,11 @@ G = gt.load_graph_from_csv(
 )
 gt.remove_parallel_edges(G)
 gt.remove_self_loops(G)
+elapsed = time.perf_counter() - start
+logging.info(f'Loaded graph: {elapsed}')
 
 # Compute the statistics
+start = time.perf_counter()
 for stat_name, compute_fn in statistics_functions.items():
     gt_stats[stat_name] = \
         compute_statistic(
@@ -183,3 +192,5 @@ for stat_name, compute_fn in statistics_functions.items():
     # Save the computed statistics
     with open(gt_stats_fp, 'w') as f:
         json.dump(gt_stats, f, indent=4)
+elapsed = time.perf_counter() - start
+logging.info(f'Computed all statistics: {elapsed}')

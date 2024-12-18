@@ -35,20 +35,22 @@ COMP_FNS = [
 ]
 
 MINMAX_BOUNDED_SCALARS = {
-    'deg_assort': (-0.5, 0.5),
-    'local_ccoeff': (-0.5, 0.5),
-    'global_ccoeff': (-0.5, 0.5),
-    'node_percolation_random': (-0.5, 0.5),
-    'node_percolation_targeted': (-0.5, 0.5),
-    'frac_giant_ccomp': (-0.5, 0.5),
+    # 'deg_assort': (-0.2, 0.2),
+    # 'local_ccoeff': (-0.5, 0.5),
+    # 'global_ccoeff': (-0.5, 0.5),
+    # 'node_percolation_random': (-0.2, 0.2),
+    # 'node_percolation_targeted': (-0.2, 0.2),
+    # 'frac_giant_ccomp': (-0.5, 0.5),
 }
 
 # ==============================================================================
 # Statistics to consider
 
-BOUNDED_SCALAR_STATS = [
+SCALAR_STATS = [
     # Degree assortativity
     ('deg_assort', 'scalar', 'abs_diff'),
+    # Fraction of nodes in the largest component
+    ('frac_giant_ccomp', 'scalar', 'abs_diff'),
     # Mean local clustering coefficient
     ('local_ccoeff', 'scalar', 'abs_diff'),
     # Global clustering coefficient
@@ -57,20 +59,10 @@ BOUNDED_SCALAR_STATS = [
     ('node_percolation_random', 'scalar', 'abs_diff'),
     # Node percolation profile (targeted removal)
     ('node_percolation_targeted', 'scalar', 'abs_diff'),
-    # Fraction of nodes in the largest component
-    ('frac_giant_ccomp', 'scalar', 'abs_diff'),
-]
-POSITIVE_SCALAR_STATS = [
     # Pseudo-diameter
     ('pseudo_diameter', 'scalar', 'rel_diff'),
     # Mean k-core
     ('mean_kcore', 'scalar', 'rel_diff'),
-    # Leading eigenvalue of adjacency matrix
-    # TODO: Not implemented
-    # Leading eigenvalue of Hashimoto matrix
-    # TODO: Not implemented
-    # Characteristic time of a random walk
-    # TODO: Not implemented
 ]
 
 # ==============================================================================
@@ -102,7 +94,7 @@ def parse_args():
         required='True',
     )
     parser.add_argument(
-        '--show-fliers',
+        '--showfliers',
         action='store_true',
         help='Show fliers',
     )
@@ -114,35 +106,42 @@ def parse_args():
     )
     parser.add_argument(
         '--num-replicates',
+        default=1,
+        type=int,
         help='Number of replicates to consider',
+    )
+    parser.add_argument(
+        '--ncols',
+        default=3,
+        type=int,
+        help='Number of columns in legend for boxplot',
     )
     return parser.parse_args()
 
 
 args = parse_args()
 
+ncols = args.ncols
+showfliers = args.showfliers
+network_whitelist_fp = args.network_whitelist_fp
+goal_n_replicates = args.num_replicates
+
 # ==============================================================================
 
 
-bounded_scalar_stats = BOUNDED_SCALAR_STATS
-positive_scalar_stats = POSITIVE_SCALAR_STATS
+scalar_stats = SCALAR_STATS
 stats = sum(
     [
-        bounded_scalar_stats,
-        positive_scalar_stats,
+        scalar_stats,
     ],
     [],
 )
 
 # ==============================================================================
 
-showfliers = args.show_fliers
-
 network_whitelist = None \
-    if args.network_whitelist_fp is None \
-    else list(pd.read_csv(args.network_whitelist_fp, header=None)[0])
-
-goal_n_replicates = int(args.num_replicates)
+    if network_whitelist_fp is None \
+    else list(pd.read_csv(network_whitelist_fp, header=None)[0])
 
 # ==============================================================================
 
@@ -199,6 +198,8 @@ for network_id in all_network_ids:
     for (name, root, resolution) in zip(names, roots, resolutions):
         if not (root / network_id / resolution).exists():
             print(f'[MISSING] {root} {network_id} {resolution}')
+            comp_results[network_id][name] = None
+            successes[network_id][name] = 0.0
             continue
 
         n_successes = 0
@@ -231,18 +232,16 @@ for network_id in all_network_ids:
             else:
                 df = pd.concat([df, df_tmp])
 
-        ratio_successes = n_successes / n_replicates if n_successes > 0 else 0.0
+        r_successes = n_successes / n_replicates if n_successes > 0 else 0.0
 
         if n_replicates < goal_n_replicates:
-            print(f'[NREPS] {root} {network_id} {
-                resolution} {n_successes}')
+            print(f'[NREPS] {root} {network_id} {resolution} {n_successes}')
 
-        if ratio_successes < 1.0:
-            print(f'[NSUCS] {root} {network_id} {
-                resolution} {ratio_successes}')
+        if r_successes < 1.0:
+            print(f'[NSUCS] {root} {network_id} {resolution} {r_successes}')
 
         comp_results[network_id][name] = df
-        successes[network_id][name] = ratio_successes
+        successes[network_id][name] = r_successes
 
 df_successes = pd.DataFrame(
     [
@@ -312,72 +311,11 @@ for network_id in comparable_networks:
 
 # ==============================================================================
 
-# Visualize positive scalar statistics
+# Visualize scalar statistics
 df_list = []
-for (stat, stat_type, distance_type) in positive_scalar_stats:
-    sim_dict = agg[(stat, stat_type, distance_type)]
-    stat_id = f'{stat}'
-    for (network_id, resolution), data in sim_dict.items():
-        network_resolution = f'{network_id}\n{resolution}'
-        for sim_name, distance in data.items():
-            df_list.append([
-                stat_id,
-                sim_name,
-                network_resolution,
-                distance,
-            ])
-df = pd.DataFrame(
-    df_list,
-    columns=[
-        'Stat',
-        'Simulator',
-        'Network',
-        'Distance (SRD)',
-    ]
-)
-selection = [
-    stat
-    for (stat, _, _) in positive_scalar_stats
-]
-fig, axes = plt.subplots(
-    1, len(selection),
-    dpi=150,
-    figsize=(3 * len(selection), 5),
-)
-for i, col in enumerate(selection):
-    values = df[df['Stat'] == col]
-    ax = sns.boxplot(
-        x='Stat',
-        y='Distance (SRD)',
-        hue='Simulator',
-        data=values,
-        ax=axes.flatten()[i],
-        showfliers=showfliers,
-    )
-    ax.legend(
-        bbox_to_anchor=(0, 1.02, 1, 0.2),
-        loc="lower left",
-        ncol=1,
-        fancybox=True,
-    )
-
-    if showfliers:
-        lb = values['Distance (SRD)'].quantile(1-Q)
-        ub = values['Distance (SRD)'].quantile(Q)
-        ax.set_ylim(lb, ub)
-
-    ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
-
-    if i != 0:
-        ax.set_ylabel('')
-    if i != len(selection) - 1:
-        ax.legend_.remove()
-fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_positive_scalar.pdf')
-
-# Visualize bounded scalar statistics
-df_list = []
-for (stat, stat_type, distance_type) in bounded_scalar_stats:
+for (stat, stat_type, distance_type) in scalar_stats:
+    if (stat, stat_type, distance_type) not in agg:
+        continue
     sim_dict = agg[(stat, stat_type, distance_type)]
     stat_id = f'{stat}'
     for (network_id, resolution), data in sim_dict.items():
@@ -386,41 +324,55 @@ for (stat, stat_type, distance_type) in bounded_scalar_stats:
             df_list.append(
                 [stat_id, sim_name, network_resolution, distance]
             )
+if len(df_list) == 0:
+    print('No scalar statistics to visualize')
+    exit(0)
 df = pd.DataFrame(
     df_list,
     columns=[
         'Stat',
         'Simulator',
         'Network',
-        'Distance (SAD)',
+        'Distance',
     ]
 )
 selection = [
     stat
-    for (stat, _, _) in bounded_scalar_stats
+    for (stat, _, _) in scalar_stats
 ]
-fig, axes = plt.subplots(1, len(selection), dpi=150,
-                         figsize=(3 * len(selection), 5))
+fig, axes = plt.subplots(
+    2,
+    (len(selection) + 1) // 2,
+    dpi=150,
+    figsize=(
+        3 * ((len(selection) + 1) // 2),
+        8
+    ),
+)
 for i, col in enumerate(selection):
     values = df[df['Stat'] == col]
     ax = sns.boxplot(
         x='Stat',
-        y='Distance (SAD)',
+        y='Distance',
         hue='Simulator',
         data=values,
         ax=axes.flatten()[i],
-        showfliers=True,
+        notch=True,
+        bootstrap=10000,
+        showfliers=showfliers,
     )
-    ax.legend(bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left",
-              ncol=1, fancybox=True)
 
-    lb, ub = MINMAX_BOUNDED_SCALARS[col]
-    ax.set_ylim(lb - 0.1, ub + 0.1)
+    if col in MINMAX_BOUNDED_SCALARS:
+        lb, ub = MINMAX_BOUNDED_SCALARS[col]
+        ax.set_ylim(lb, ub)
+
     ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 
-    if i != 0:
+    if i % ((len(selection) + 1) // 2) != 0:
         ax.set_ylabel('')
-    if i != len(selection) - 1:
-        ax.legend_.remove()
+    ax.legend_.remove()
+handles, labels = axes[0, 0].get_legend_handles_labels()
+fig.legend(handles, labels, loc='upper center', ncol=ncols,
+           bbox_to_anchor=(0.5, 1.1), fancybox=True)
 fig.tight_layout()
-fig.savefig(output_dir / 'boxplot_bounded_scalar.pdf')
+fig.savefig(output_dir / 'boxplot_scalar.pdf', bbox_inches='tight')
