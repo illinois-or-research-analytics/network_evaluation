@@ -63,6 +63,8 @@ SCALAR_STATS = [
     ('pseudo_diameter', 'scalar', 'rel_diff'),
     # Mean k-core
     ('mean_kcore', 'scalar', 'rel_diff'),
+    # # Characteristic time
+    # ('tau', 'scalar', 'rel_diff'),
 ]
 
 # ==============================================================================
@@ -116,6 +118,14 @@ def parse_args():
         type=int,
         help='Number of columns in legend for boxplot',
     )
+    parser.add_argument(
+        '--stats',
+        nargs='+',
+        help='Scalar statistics to consider',
+        default=[
+            stat for stat, _, _ in SCALAR_STATS
+        ]
+    )
     return parser.parse_args()
 
 
@@ -128,14 +138,11 @@ goal_n_replicates = args.num_replicates
 
 # ==============================================================================
 
-
-scalar_stats = SCALAR_STATS
-stats = sum(
-    [
-        scalar_stats,
-    ],
-    [],
-)
+scalar_stats = [
+    (stat, stat_type, distance_type)
+    for stat, stat_type, distance_type in SCALAR_STATS
+    if stat in args.stats
+]
 
 # ==============================================================================
 
@@ -276,7 +283,7 @@ comparable_networks = [
 
 agg = dict()
 for network_id in comparable_networks:
-    for stat, stat_type, distance_type in stats:
+    for stat, stat_type, distance_type in scalar_stats:
         agg.setdefault(
             (stat, stat_type, distance_type),
             dict(),
@@ -340,38 +347,71 @@ selection = [
     stat
     for (stat, _, _) in scalar_stats
 ]
-fig, axes = plt.subplots(
-    2,
-    (len(selection) + 1) // 2,
-    dpi=150,
-    figsize=(
-        3 * ((len(selection) + 1) // 2),
-        8
-    ),
-)
-for i, col in enumerate(selection):
-    values = df[df['Stat'] == col]
-    ax = sns.boxplot(
-        x='Stat',
-        y='Distance',
-        hue='Simulator',
-        data=values,
-        ax=axes.flatten()[i],
-        notch=True,
-        bootstrap=10000,
-        showfliers=showfliers,
+
+if len(selection) > 4:
+    n_plots_per_row = (len(selection) + 1) // 2
+    if n_plots_per_row == 1:
+        figsize = (10, 8)
+    else:
+        figsize = (3 * n_plots_per_row, 8)
+    fig, axes = plt.subplots(
+        2,
+        (len(selection) + 1) // 2,
+        dpi=150,
+        figsize=figsize,
     )
+    for i, col in enumerate(selection):
+        values = df[df['Stat'] == col]
+        ax = sns.boxplot(
+            x='Stat',
+            y='Distance',
+            hue='Simulator',
+            data=values,
+            ax=axes.flatten()[i],
+            notch=True,
+            bootstrap=10000,
+            showfliers=showfliers,
+        )
 
-    if col in MINMAX_BOUNDED_SCALARS:
-        lb, ub = MINMAX_BOUNDED_SCALARS[col]
-        ax.set_ylim(lb, ub)
+        if col in MINMAX_BOUNDED_SCALARS:
+            lb, ub = MINMAX_BOUNDED_SCALARS[col]
+            ax.set_ylim(lb, ub)
 
-    ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+        ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 
-    if i % ((len(selection) + 1) // 2) != 0:
-        ax.set_ylabel('')
-    ax.legend_.remove()
-handles, labels = axes[0, 0].get_legend_handles_labels()
+        if i % ((len(selection) + 1) // 2) != 0:
+            ax.set_ylabel('')
+        ax.legend_.remove()
+    if len(selection) % 2 == 1:
+        fig.delaxes(axes.flatten()[-1])
+else:
+    fig, axes = plt.subplots(
+        1,
+        len(selection),
+        dpi=150,
+        figsize=(3 * len(selection), 5),
+    )
+    for i, col in enumerate(selection):
+        values = df[df['Stat'] == col]
+        ax = sns.boxplot(
+            x='Stat',
+            y='Distance',
+            hue='Simulator',
+            data=values,
+            ax=axes.flatten()[i],
+            notch=True,
+            bootstrap=10000,
+            showfliers=showfliers,
+        )
+
+        if col in MINMAX_BOUNDED_SCALARS:
+            lb, ub = MINMAX_BOUNDED_SCALARS[col]
+            ax.set_ylim(lb, ub)
+
+        ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
+
+        ax.legend_.remove()
+handles, labels = axes.flatten()[0].get_legend_handles_labels()
 fig.legend(handles, labels, loc='upper center', ncol=ncols,
            bbox_to_anchor=(0.5, 1.1), fancybox=True)
 fig.tight_layout()
