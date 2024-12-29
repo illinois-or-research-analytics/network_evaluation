@@ -47,24 +47,27 @@ MINMAX_BOUNDED_SCALARS = {
 # Statistics to consider
 
 SCALAR_STATS = [
+    # Number of edges
+    ('n_edges', 'scalar', 'rel_diff'),
+    # Pseudo-diameter
+    ('pseudo_diameter', 'scalar', 'rel_diff'),
+    # Characteristic time
+    ('char_time', 'scalar', 'rel_diff'),
     # Degree assortativity
     ('deg_assort', 'scalar', 'abs_diff'),
-    # Fraction of nodes in the largest component
-    ('frac_giant_ccomp', 'scalar', 'abs_diff'),
     # Mean local clustering coefficient
     ('local_ccoeff', 'scalar', 'abs_diff'),
     # Global clustering coefficient
     ('global_ccoeff', 'scalar', 'abs_diff'),
+
+    # Fraction of nodes in the largest component
+    ('frac_giant_ccomp', 'scalar', 'abs_diff'),
     # Node percolation profile (random removal)
     ('node_percolation_random', 'scalar', 'abs_diff'),
     # Node percolation profile (targeted removal)
     ('node_percolation_targeted', 'scalar', 'abs_diff'),
-    # Pseudo-diameter
-    ('pseudo_diameter', 'scalar', 'rel_diff'),
     # Mean k-core
     ('mean_kcore', 'scalar', 'rel_diff'),
-    # # Characteristic time
-    # ('tau', 'scalar', 'rel_diff'),
 ]
 
 # ==============================================================================
@@ -348,6 +351,7 @@ selection = [
     for (stat, _, _) in scalar_stats
 ]
 
+nrows = len(names) // ncols + (len(names) % ncols > 0)
 if len(selection) > 4:
     n_plots_per_row = (len(selection) + 1) // 2
     if n_plots_per_row == 1:
@@ -384,6 +388,7 @@ if len(selection) > 4:
         ax.legend_.remove()
     if len(selection) % 2 == 1:
         fig.delaxes(axes.flatten()[-1])
+    bbox_to_anchor = (0.5, 1.05 + 0.02 * nrows)
 else:
     fig, axes = plt.subplots(
         1,
@@ -411,8 +416,16 @@ else:
         ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
 
         ax.legend_.remove()
+
+    bbox_to_anchor = (0.5, 1.1 + 0.02 * nrows)
 handles, labels = axes.flatten()[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc='upper center', ncol=ncols,
-           bbox_to_anchor=(0.5, 1.1), fancybox=True)
+fig.legend(
+    handles,
+    labels,
+    loc='upper center',
+    ncol=ncols,
+    bbox_to_anchor=bbox_to_anchor,
+    fancybox=True,
+)
 fig.tight_layout()
 fig.savefig(output_dir / 'boxplot_scalar.pdf', bbox_inches='tight')

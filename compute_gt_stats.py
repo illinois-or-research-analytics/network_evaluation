@@ -22,6 +22,10 @@ def compute_statistic(stat_name, compute_fn, gt_stats, overwrite=False):
     return result
 
 
+def n_edges(G):
+    return G.num_edges()
+
+
 def mean_degree(G):
     return np.mean([v.out_degree() for v in G.vertices()])
 
@@ -61,7 +65,10 @@ def characteristic_time_random_walk(G):
     largest_cc = gt.extract_largest_component(G)
     T = gt.transition(largest_cc)
     eigvals_T = la.eigs(T, k=2, return_eigenvectors=False, which='LR')
-    return -np.log(np.abs(eigvals_T[0].real))
+    second_eigval = eigvals_T[0].real
+    assert second_eigval > 0, \
+        f'Non-positive second eigenvalue: {second_eigval}'
+    return - 1 / np.log(second_eigval)
 
 
 def pseudo_diameter(G):
@@ -144,14 +151,15 @@ else:
     gt_stats = dict()
 
 statistics_functions = {
-    # 'mean_degree': mean_degree,
+    'n_edges': n_edges,
+    'mean_degree': mean_degree,
     'deg_assort': degree_assortativity,
     'mean_kcore': mean_kcore_value,
     'local_ccoeff': local_clustering_coefficient,
     'global_ccoeff': global_clustering_coefficient,
     # 'l_eigval_A': leading_eigenvalue_adjacency,
     # 'l_eigval_H': leading_eigenvalue_hashimoto,
-    # 'tau': characteristic_time_random_walk,
+    'char_time': characteristic_time_random_walk,
     'pseudo_diameter': pseudo_diameter,
     'node_percolation_targeted': node_percolation_targeted,
     'node_percolation_random': node_percolation_random,
