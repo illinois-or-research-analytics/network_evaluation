@@ -394,7 +394,7 @@ else:
         1,
         len(selection),
         dpi=150,
-        figsize=(3 * len(selection), 5),
+        figsize=(3 * len(selection), 4),
     )
     for i, col in enumerate(selection):
         values = df[df['Stat'] == col]
@@ -417,7 +417,7 @@ else:
 
         ax.legend_.remove()
 
-    bbox_to_anchor = (0.5, 1.1 + 0.02 * nrows)
+    bbox_to_anchor = (0.5, 1.1 + 0.03 * nrows)
 handles, labels = axes.flatten()[0].get_legend_handles_labels()
 fig.legend(
     handles,
