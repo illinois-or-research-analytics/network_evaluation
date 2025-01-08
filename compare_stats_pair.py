@@ -288,10 +288,14 @@ def compare_sequences(
         assert len(df_2_ids) == len(df_2_values)
         df_2 = pd.concat([df_2_ids, df_2_values], axis=1)
 
-        # TODO: Handle cases where there are outliers. For now, just ignore them.
-        # assert len(df_1) == len(df_2), f"{len(df_1)} != {len(df_2)}"
-        df_joined = pd.merge(df_1, df_2, on='id', how='inner')
-        # assert len(df_joined) == len(df_1) and len(df_joined) == len(df_2)
+        try:
+            # TODO: Handle cases where there are outliers. For now, just ignore them.
+            # assert len(df_1) == len(df_2), f"{len(df_1)} != {len(df_2)}"
+            df_joined = pd.merge(df_1, df_2, on='id', how='inner')
+            # assert len(df_joined) == len(df_1) and len(df_joined) == len(df_2)
+        except Exception as e:
+            print(f"[ERROR] ({name}) {e}")
+            continue
 
         network_1_seq = df_joined['1'].values
         network_2_seq = df_joined['2'].values
@@ -346,10 +350,10 @@ def compare_sequences(
     "--output-file",
     required=True,
     type=click.Path(
-        dir_okay=False,
+        dir_okay=True,
         writable=True,
     ),
-    help="Ouput folder to save the comparison results",
+    help="Ouput file to save the comparison results",
 )
 @ click.option(
     "--is-compare-sequence",
@@ -396,6 +400,7 @@ def compare_stats(
             'distance',
         ]
     )
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_file, index=False)
 
 

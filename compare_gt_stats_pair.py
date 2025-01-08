@@ -122,6 +122,7 @@ def compare_stats(
             'distance',
         ]
     )
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_file, index=False)
 
 
