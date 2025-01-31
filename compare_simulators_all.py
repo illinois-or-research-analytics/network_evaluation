@@ -443,7 +443,8 @@ else:
         if distance_type in ['abs_diff', 'rel_diff']:
             ax.axhline(y=0.0, color='r', linestyle='dashed', linewidth=0.5)
         elif distance_type in ['rmse']:
-            ax.set_ylim(0.0)
+            # ax.set_ylim(0.0)
+            pass
 
         ax.legend_.remove()
 
