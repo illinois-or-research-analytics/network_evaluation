@@ -69,7 +69,7 @@ SCALAR_STATS = [
     # Mean k-core
     ('mean_kcore', 'scalar', 'rel_diff'),
 
-    # Minimum cut size (cluster)
+    # # Minimum cut size (cluster)
     ('mincuts', 'sequence', 'rmse'),
     # Number of internal edges (cluster)
     ('c_edges', 'sequence', 'rmse'),
@@ -79,12 +79,25 @@ SCALAR_STATS = [
     ('mixing_mus', 'sequence', 'rmse'),
     # Outlier degree sequence (vertex)
     ('o_deg', 'sequence', 'rmse'),
+
+    # Minimum cut size (cluster)
+    ('mincuts', 'distribution', 'emd'),
+    # Number of internal edges (cluster)
+    ('c_edges', 'distribution', 'emd'),
+    # Degree (vertex)
+    ('degree', 'distribution', 'emd'),
+    # Mixing parameter mu (vertex)
+    ('mixing_mus', 'distribution', 'emd'),
+    # Outlier degree distribution (vertex)
+    ('o_deg', 'distribution', 'emd'),
 ]
 
 MAP_DISTANCE = {
     'abs_diff': 'Distance (SD)',
     'rel_diff': 'Distance (SRD)',
     'rmse': 'Distance (RMSE)',
+    'ks': 'Distance (KS)',
+    'emd': 'Distance (EMD)',
 }
 
 # ==============================================================================
@@ -147,6 +160,11 @@ def parse_args():
         ]
     )
     parser.add_argument(
+        '--distrib',
+        action='store_true',
+        help='Compare as distributions',
+    )
+    parser.add_argument(
         '--prefix',
         default='',
         help='Prefix for output files',
@@ -166,7 +184,10 @@ goal_n_replicates = args.num_replicates
 scalar_stats = [
     (stat, stat_type, distance_type)
     for stat, stat_type, distance_type in SCALAR_STATS
-    if stat in args.stats
+    if (stat in args.stats) and (
+        stat_type in ['scalar', 'distribution'] if args.distrib 
+        else stat_type in ['scalar', 'sequence']
+    )
 ]
 
 # ==============================================================================
@@ -401,7 +422,7 @@ if len(selection) > 5:
 
         if distance_type in ['abs_diff', 'rel_diff']:
             ax.axhline(y=0, color='r', linestyle='dashed', linewidth=0.5)
-        elif distance_type in ['rmse']:
+        elif distance_type in ['rmse', 'emd']:
             ax.set_ylim(-0.01)
 
         if i % ((len(selection) + 1) // 2) != 0:
@@ -442,7 +463,7 @@ else:
 
         if distance_type in ['abs_diff', 'rel_diff']:
             ax.axhline(y=0.0, color='r', linestyle='dashed', linewidth=0.5)
-        elif distance_type in ['rmse']:
+        elif distance_type in ['rmse', 'emd']:
             # ax.set_ylim(0.0)
             pass
 
