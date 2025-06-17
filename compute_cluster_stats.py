@@ -52,9 +52,17 @@ with open(community_fp, 'r') as f:
             continue
         
         parts = line.strip().split(delimiter)
-        assert len(parts) >= 2, "Each line in the community file should contain at least one community ID and one node."
+        assert len(parts) == 2, "Each line in the community file should contain exactly two parts: node ID and community ID."
 
-        com_id = parts[0]
+        node_id = parts[0]
+        if node_id not in node_id2iid:
+            node_id2iid[node_id] = node_iid_count
+            node_iid2id[node_iid_count] = node_id
+            node_iid_count += 1
+
+        node_iid = node_id2iid[node_id]
+
+        com_id = parts[1]
 
         if com_id not in com_id2iid:
             com_id2iid[com_id] = com_iid_count
@@ -63,16 +71,8 @@ with open(community_fp, 'r') as f:
 
         com_iid = com_id2iid[com_id]
 
-        for node in parts[1:]:
-            if node not in node_id2iid:
-                node_id2iid[node] = node_iid_count
-                node_iid2id[node_iid_count] = node
-                node_iid_count += 1
-
-            node_iid = node_id2iid[node]
-
-            node2coms.setdefault(node_iid, set()).add(com_iid)
-            com2nodes.setdefault(com_iid, set()).add(node_iid)
+        node2coms.setdefault(node_iid, set()).add(com_iid)
+        com2nodes.setdefault(com_iid, set()).add(node_iid)
 
 # Load network data
 delimiter = detect_delimiter(network_fp)
