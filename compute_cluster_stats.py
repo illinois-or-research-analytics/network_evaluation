@@ -48,6 +48,9 @@ com2nodes = {}
 with open(community_fp, 'r') as f:
     lines = f.readlines()
     for line in lines:
+        if line.startswith('#'):
+            continue
+        
         parts = line.strip().split(delimiter)
         assert len(parts) >= 2, "Each line in the community file should contain at least one community ID and one node."
 
@@ -80,6 +83,9 @@ outliers = set()
 with open(network_fp, 'r') as f:
     lines = f.readlines()
     for line in lines:
+        if line.startswith('#'):
+            continue
+
         parts = line.strip().split(delimiter)
         assert len(parts) == 2, "Each line in the network file should contain exactly two nodes."
 
@@ -156,14 +162,14 @@ def compute_mS(neighbors, com):
 def compute_cS(neighbors, com):
     return compute_mS_cS(neighbors, com)[1]
 
-def compute_nS(neighbors, com):
+def compute_nS(com):
     """Compute the number of nodes in the community."""
     return len(com)
 
 def compute_conductance(neighbors, com, m=None, c=None):
     """Compute the conductance of the community."""
     m, c = compute_mS_cS(neighbors, com) if m is None or c is None else (m, c)
-    return c / (2 * m + c)
+    return c / (2 * m + c) if c > 0 else 0.0
 
 def compute_normalized_density(neighbors, com, m=None, n=None):
     """Compute the normalized density of the community."""
@@ -248,7 +254,7 @@ for com_iid in range(com_iid_count):
     assert com_iid in com2nodes, f"Community IID {com_iid} not found in com2nodes mapping."
     com = com2nodes[com_iid]
 
-    n = compute_nS(neighbors, com)
+    n = compute_nS(com)
     m, c = compute_mS_cS(neighbors, com)
     cond = compute_conductance(neighbors, com, m, c)
     norm_density = compute_normalized_density(neighbors, com, m, n)
