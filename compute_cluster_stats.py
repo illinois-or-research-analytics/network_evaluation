@@ -59,16 +59,13 @@ with open(community_fp, 'r') as f:
             node_id2iid[node_id] = node_iid_count
             node_iid2id[node_iid_count] = node_id
             node_iid_count += 1
-
         node_iid = node_id2iid[node_id]
 
         com_id = parts[1]
-
         if com_id not in com_id2iid:
             com_id2iid[com_id] = com_iid_count
             com_iid2id[com_iid_count] = com_id
             com_iid_count += 1
-
         com_iid = com_id2iid[com_id]
 
         node2coms.setdefault(node_iid, set()).add(com_iid)
@@ -183,7 +180,7 @@ def compute_mincut(neighbors, com):
     for node in com:
         for neighbor in neighbors.get(node, []):
             if neighbor in com:
-                cluster_edges.add((min(node, neighbor), max(node, neighbor)))
+                cluster_edges.add((node, neighbor))
     cluster_nodes = list(com)
     cluster_edges = list(cluster_edges)
     sub_G = PyGraph(cluster_nodes, cluster_edges)
