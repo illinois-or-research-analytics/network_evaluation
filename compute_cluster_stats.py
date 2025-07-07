@@ -190,7 +190,7 @@ def compute_modularity(neighbors, com, global_m=None, m=None, c=None):
     """Compute the modularity of the community."""
     m, c = compute_mS_cS(neighbors, com) if m is None or c is None else (m, c)
     global_m = compute_global_m(neighbors) if global_m is None else global_m
-    return (m / global_m) - ((m + c) / global_m) ** 2
+    return (m / global_m) - ((2 * m + c) / (2 * global_m)) ** 2
 
 def compute_mixing_parameter(node, neighbors, node2coms, outliers):
     """Compute the mixing parameter for a node."""
