@@ -484,8 +484,7 @@ def log_cpu_ram_usage(step_name):
     cpu_percent = psutil.cpu_percent()
     ram_percent = psutil.virtual_memory().percent
     disk_percent = psutil.disk_usage('/').percent
-    logging.info(f'Step: {step_name} | CPU Usage: {cpu_percent}% | RAM Usage: {
-                 ram_percent}% | Disk Usage: {disk_percent}')
+    logging.info(f'Step: {step_name} | CPU Usage: {cpu_percent}% | RAM Usage: {ram_percent}% | Disk Usage: {disk_percent}')
 
 
 def save_distr_stats(dir_path, distr_stats_dict, overwrite):
