@@ -20,18 +20,18 @@ echo "Generated Network Path: $GENERATED_NETWORK_PATH"
 echo "Cluster Path: $CLUSTER_PATH"
 echo "Output Directory: $OUTPUT"
 
-python3 compute_stats.py --input-network "$REAL_NETWORK_PATH" \
-                         --input-clustering "$CLUSTER_PATH" \
-                         --output-folder "orig_$OUTPUT" \
-                         --overwrite &
+python3 ./network_stats/compute_stats.py --input-network "$REAL_NETWORK_PATH" \
+                                         --input-clustering "$CLUSTER_PATH" \
+                                         --output-folder "orig_$OUTPUT" \
+                                         --overwrite &
 
-python3 compute_stats.py --input-network "$GENERATED_NETWORK_PATH" \
-                                       --input-clustering "$CLUSTER_PATH" \
-                                       --output-folder "syn_$OUTPUT" \
-                                       --overwrite &
+python3 ./network_stats/compute_stats.py --input-network "$GENERATED_NETWORK_PATH" \
+                                         --input-clustering "$CLUSTER_PATH" \
+                                         --output-folder "syn_$OUTPUT" \
+                                         --overwrite &
 wait
 
-python3 compare_stats_pair.py --network-1-folder "orig_$OUTPUT" \
-                               --network-2-folder "syn_$OUTPUT" \
-                               --output-file "${OUTPUT}.csv" \
-                               --is-compare-sequence
+python3 ./compare_networks/compare_stats_pair.py --network-1-folder "orig_$OUTPUT" \
+                                                 --network-2-folder "syn_$OUTPUT" \
+                                                 --output-file "${OUTPUT}.csv" \
+                                                 --is-compare-sequence
