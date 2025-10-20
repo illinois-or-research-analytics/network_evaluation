@@ -337,6 +337,7 @@ def compute_stats(input_network, input_clustering, output_folder, overwrite):
             input_clustering,
             cluster_mapping_dict_reversed,
             cluster_order,
+            edgelist_delimiter=delimiter,
             delimiter=cluster_delimiter,
         )
         cluster_stats = cluster_stats[cluster_stats["n"] > 1]
@@ -667,6 +668,7 @@ def compute_participation_coeff_distr(
                 [(deg_i / deg_of_node) ** 2 for deg_i in list(participation.values())]
             )
             if -1 in participation.keys():
+                # TODO: verify this correction
                 coeff += (participation[-1] / deg_of_node) ** 2
                 coeff -= participation[-1] * ((1 / deg_of_node) ** 2)
 
@@ -694,7 +696,7 @@ def load_clusters(
 
 
 def compute_cluster_stats(
-    network_fp, clustering_fp, cluster_iid2id, cluster_order, delimiter="\t"
+    network_fp, clustering_fp, cluster_iid2id, cluster_order, edgelist_delimiter="\t", delimiter="\t"
 ):
     clusters = load_clusters(
         clustering_fp,
@@ -705,8 +707,7 @@ def compute_cluster_stats(
     ids = [cluster.index for cluster in clusters]
     ns = [cluster.n() for cluster in clusters]
 
-    # TODO: check this reader
-    edgelist_reader = nk.graphio.EdgeListReader("\t", 0)
+    edgelist_reader = nk.graphio.EdgeListReader(edgelist_delimiter, 0)
     nk_graph = edgelist_reader.read(network_fp)
 
     global_graph = Graph(nk_graph, "")

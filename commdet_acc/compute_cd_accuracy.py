@@ -391,6 +391,7 @@ def get_agri(
     estimated_sum = sum(estimated_edgemask)
     both_sum = sum(groundtruth_edgemask * estimated_edgemask)
     size = len(groundtruth_edgemask)
+    # TODO: handle edge case where denominator is 0
     return (both_sum - gt_sum * estimated_sum / size) / (
         0.5 * (gt_sum + estimated_sum) - gt_sum * estimated_sum / size
     )
@@ -406,24 +407,6 @@ def get_cluster_node_pairs(partition):
             if partition[i] == partition[j]
         ]
     )
-
-
-def get_fnr_fpr(groundtruth_partition, estimated_partition, num_processors):
-    with mp.Pool(processes=num_processors) as pool:
-        results = pool.map(
-            get_cluster_node_pairs, [groundtruth_partition, estimated_partition]
-        )
-    tp = len(results[0].intersection(results[1]))
-    fn = len(results[0]) - tp
-    fp = len(results[1]) - tp
-    n = len(groundtruth_partition)
-    tn = int((n * (n - 1)) / 2) - len(results[1]) - fn
-    fnr = fn / (fn + tp)
-    fpr = fp / (fp + tn)
-    return {
-        "fnr": fnr,
-        "fpr": fpr,
-    }
 
 
 def file_has_value(filepath):

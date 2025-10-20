@@ -77,7 +77,7 @@ def pseudo_diameter(G):
 
 
 def node_percolation_targeted(G):
-    vertices = sorted([v for v in G.vertices()], key=lambda v: v.out_degree())
+    vertices = sorted([v for v in G.vertices()], key=lambda v: v.out_degree(), reverse=True)
     sizes, _ = gt.vertex_percolation(G, vertices)
     return np.mean(sizes) / G.num_vertices()
 

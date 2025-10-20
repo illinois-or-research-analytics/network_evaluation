@@ -31,14 +31,17 @@ output_dir.mkdir(parents=True, exist_ok=True)
 def detect_delimiter(file_path):
     with open(file_path, "r") as f:
         first_line = f.readline()
-        if "," in first_line:
-            return ","
-        elif "\t" in first_line:
+        if len(first_line) == 0:
             return "\t"
+
+        if "\t" in first_line:
+            return "\t"
+        elif "," in first_line:
+            return ","
         elif " " in first_line:
             return " "
         else:
-            raise ValueError("No delimiter found in the first line of the file.")
+            raise ValueError("Unsupported delimiter in the input file.")
 
 
 # Load community data
@@ -121,6 +124,12 @@ with open(network_fp, "r") as f:
 
         neighbors.setdefault(node1_iid, set()).add(node2_iid)
         neighbors.setdefault(node2_iid, set()).add(node1_iid)
+
+# Check that clustered nodes are not isolated
+for node_iid in node2coms:
+    assert (
+        node_iid in neighbors
+    ), f"Clustered node ID {node_iid2id[node_iid]} is isolated in the network."
 
 # Export node_id2iid to file (one column, no header, line id is the iid)
 with (output_dir / "node.idx").open("w") as f:
@@ -229,7 +238,7 @@ def compute_mixing_parameter(node, neighbors, node2coms, outliers):
     for neighbor in neighbors.get(node, set()):
         n_neighbors += 1
         n_in += 1 if coms.intersection(node2coms.get(neighbor, set())) else 0
-    return 1.0 - n_in / n_neighbors if n_in > 0 else 0.0
+    return 1.0 - n_in / n_neighbors
 
 
 # Compute global stats
