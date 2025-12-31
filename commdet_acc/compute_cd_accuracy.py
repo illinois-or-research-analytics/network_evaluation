@@ -391,7 +391,6 @@ def get_agri(
     estimated_sum = sum(estimated_edgemask)
     both_sum = sum(groundtruth_edgemask * estimated_edgemask)
     size = len(groundtruth_edgemask)
-    # TODO: handle edge case where denominator is 0
     return (both_sum - gt_sum * estimated_sum / size) / (
         0.5 * (gt_sum + estimated_sum) - gt_sum * estimated_sum / size
     )
@@ -407,6 +406,24 @@ def get_cluster_node_pairs(partition):
             if partition[i] == partition[j]
         ]
     )
+
+
+def get_fnr_fpr(groundtruth_partition, estimated_partition, num_processors):
+    with mp.Pool(processes=num_processors) as pool:
+        results = pool.map(
+            get_cluster_node_pairs, [groundtruth_partition, estimated_partition]
+        )
+    tp = len(results[0].intersection(results[1]))
+    fn = len(results[0]) - tp
+    fp = len(results[1]) - tp
+    n = len(groundtruth_partition)
+    tn = int((n * (n - 1)) / 2) - len(results[1]) - fn
+    fnr = fn / (fn + tp)
+    fpr = fp / (fp + tn)
+    return {
+        "fnr": fnr,
+        "fpr": fpr,
+    }
 
 
 def file_has_value(filepath):
@@ -464,7 +481,7 @@ def calc_fpr(gt, et, matrix=None):
     return fp / (fp + tn) if (fp + tn) > 0 else 0.0
 
 
-def compute_accuracy(
+def clustering_accuracy(
     input_edgelist,
     groundtruth_clustering,
     estimated_clustering,
@@ -476,11 +493,6 @@ def compute_accuracy(
     if not os.path.exists(input_edgelist):
         raise FileNotFoundError(f"Input edgelist file {input_edgelist} does not exist.")
 
-    with open(output_prefix, "w") as f:
-        f.write(
-            f"starting {groundtruth_clustering} vs {estimated_clustering} on {input_edgelist}\n"
-        )
-
     gt.openmp_set_num_threads(num_processors)
     node_set = get_node_set_edgelist(input_edgelist)
     original_node_set_length = len(node_set)
@@ -490,9 +502,7 @@ def compute_accuracy(
 
     original_to_integer_node_id_dict = create_mapping(node_set)
     if len(original_to_integer_node_id_dict) == 0:
-        with open(output_prefix, "a") as f:
-            f.write(f"empty or only singleton nodes in estimated clustering file")
-            return
+        raise ValueError("No nodes found in the specified node set.")
 
     groundtruth_partition = read_clustering(
         groundtruth_clustering, original_to_integer_node_id_dict
@@ -686,7 +696,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    compute_accuracy(
+    clustering_accuracy(
         args.input_network,
         args.gt_clustering,
         args.est_clustering,
