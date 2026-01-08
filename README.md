@@ -32,7 +32,7 @@ python <git root>/network_stats/compute_network_stats.py --network <FILE> --gt-c
 ### Clustering Statistics
 This section describes the command and usage for computing cluster level statistics for a given network and a clustering. The input network and clustering files are  expected to be in a comma separated format without headers.
 ```
-python <git root>/network_stats/compute_cluster_stats.py --network <FILE> --gt-clustering <FILE>  --community <FILE> --outdir <FILE PATH PREFIX>
+python <git root>/network_stats/compute_cluster_stats.py --network <FILE> --community <FILE> --outdir <FILE PATH PREFIX>
 ```
 | output field name | explanation |
 | --- | --- |
