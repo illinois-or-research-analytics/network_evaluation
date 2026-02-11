@@ -138,9 +138,9 @@ def compute_mixing_parameter(node, neighbors, node2coms, outliers):
     return 1.0 - n_in / n_neighbors if n_in > 0 else 0.0
 
 
-def compute_n_clusters(com_iid_count):
+def compute_n_clusters(n_clusters):
     """Compute the number of clusters."""
-    return com_iid_count
+    return n_clusters
 
 
 def compute_n_singleton_clusters(cluster_stats):
@@ -269,11 +269,56 @@ with open(community_fp, "r") as f:
         node2coms.setdefault(node_iid, set()).add(com_iid)
         com2nodes.setdefault(com_iid, set()).add(node_iid)
 
+# Identify valid clusters (size > 1)
+valid_old_com_iids = [
+    cid for cid in sorted(com2nodes.keys()) if len(com2nodes[cid]) > 1
+]
+
+# Create new mappings
+new_com_id2iid = {}
+new_com_iid2id = {}
+new_com2nodes = {}
+new_node2coms = {}
+new_com_iid_count = 0
+
+# Build new continuous mappings
+for old_iid in valid_old_com_iids:
+    # Assign new continuous ID
+    new_iid = new_com_iid_count
+
+    # Get original string ID and update ID maps
+    com_id_str = com_iid2id[old_iid]
+    new_com_id2iid[com_id_str] = new_iid
+    new_com_iid2id[new_iid] = com_id_str
+
+    # Get nodes and update structure maps
+    nodes = com2nodes[old_iid]
+    new_com2nodes[new_iid] = nodes
+
+    for node_iid in nodes:
+        if node_iid not in new_node2coms:
+            new_node2coms[node_iid] = set()
+        new_node2coms[node_iid].add(new_iid)
+
+    new_com_iid_count += 1
+
+# Replace global maps with new maps
+com_id2iid = new_com_id2iid
+com_iid2id = new_com_iid2id
+com2nodes = new_com2nodes
+node2coms = new_node2coms
+com_iid_count = new_com_iid_count
+
+# Outliers are unclustered nodes
+outliers = set()
+for node_iid in range(node_iid_count):
+    if node_iid not in node2coms:
+        outliers.add(node_iid)
+
 # Load network data
 delimiter = detect_delimiter(network_fp)
 
 neighbors = {}
-outliers = set()
 
 with open(network_fp, "r") as f:
     for line in f:
@@ -414,7 +459,6 @@ for com_iid in range(com_iid_count):
 
 # Compute global stats
 global_stats["n_clusters"] = compute_n_clusters(com_iid_count)
-global_stats["n_singleton_clusters"] = compute_n_singleton_clusters(cluster_stats)
 global_stats["n_disconnected_clusters"] = compute_n_disconnected_clusters(cluster_stats)
 global_stats["n_connected_clusters"] = compute_n_connected_clusters(cluster_stats)
 global_stats["n_wellconnected_clusters"] = compute_n_wellconnected_clusters(
