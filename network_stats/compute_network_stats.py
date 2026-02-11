@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import networkit as nk
 import pandas as pd
 
@@ -11,6 +12,21 @@ import argparse
 
 STATS_JSON_FILENAME = "stats.json"
 NODE_ORDERING_IDX_FILENAME = "node_ordering.idx"
+
+NODE_COLUMN_NAMES = [
+    "node_id",
+    "node",
+    "vertex_id",
+    "vertex",
+    "source_id",
+    "source",
+    "target_id",
+    "target",
+    "node1_id",
+    "node1",
+    "node2_id",
+    "node2",
+]
 
 SCALAR_STATS = {
     "n_nodes",
@@ -42,6 +58,22 @@ def detect_delimiter(file_path):
             break
     print("[WARNING] Could not detect delimiter...")
     return ","
+
+
+def check_if_header_exists(filepath, delimiter):
+    with open(filepath, "r") as f:
+        for line in f:
+            if line.strip().startswith("#") or not line.strip():
+                continue
+            parts = line.strip().split(delimiter)
+            if (
+                len(parts) >= 2
+                and parts[0].lower() in NODE_COLUMN_NAMES
+                and parts[1].lower() in NODE_COLUMN_NAMES
+            ):
+                return True
+            return False
+    return False
 
 
 def compute_stats(input_network, output_dir, overwrite):
@@ -82,12 +114,31 @@ def compute_stats(input_network, output_dir, overwrite):
     # Determine the delimiter
     delimiter = detect_delimiter(input_network)
 
-    # Read the network
     logging.info("Reading input network")
     start_time = time.perf_counter()
 
-    elr = nk.graphio.EdgeListReader(delimiter, 0, continuous=False, directed=False)
-    graph = elr.read(input_network)
+    has_header = check_if_header_exists(input_network, delimiter)
+    header_arg = 0 if has_header else None
+    logging.info(f"Header detected: {has_header}")
+
+    df = pd.read_csv(
+        input_network, sep=delimiter, header=header_arg, comment="#", dtype=str
+    )
+
+    if header_arg is None:
+        df.rename(columns={0: "Source", 1: "Target"}, inplace=True)
+    else:
+        df.columns.values[0] = "Source"
+        df.columns.values[1] = "Target"
+
+    unique_nodes = pd.unique(df.iloc[:, [0, 1]].values.ravel("K"))
+
+    node_mapping_dict = {name: i for i, name in enumerate(unique_nodes)}
+    src_ids = df.iloc[:, 0].map(node_mapping_dict).values.astype(np.uint64)
+    tgt_ids = df.iloc[:, 1].map(node_mapping_dict).values.astype(np.uint64)
+
+    n_nodes = len(unique_nodes)
+    graph = nk.GraphFromCoo((src_ids, tgt_ids), n=n_nodes, directed=False)
     graph.removeMultiEdges()
     graph.removeSelfLoops()
 
@@ -96,18 +147,11 @@ def compute_stats(input_network, output_dir, overwrite):
     logging.info("Generating node mapping and ordering.")
     start_time = time.perf_counter()
 
-    # Generate the node mapping
-    node_mapping_dict = elr.getNodeMap()
-    node_mapping_dict_reversed = {v: k for k, v in node_mapping_dict.items()}
     node_order = list(graph.iterNodes())
-
-    # Generate the node ordering
     with open(output_dir / NODE_ORDERING_IDX_FILENAME, "w") as idx_f:
-        node_ordering_idx_list = [
-            [node_mapping_dict_reversed[node_iid]] for node_iid in node_order
-        ]
-        df = pd.DataFrame(node_ordering_idx_list)
-        df.to_csv(idx_f, sep="\t", header=False, index=False)
+        node_ordering_idx_list = [[unique_nodes[node_iid]] for node_iid in node_order]
+        df_out = pd.DataFrame(node_ordering_idx_list)
+        df_out.to_csv(idx_f, sep=",", header=False, index=False)
 
     logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
 

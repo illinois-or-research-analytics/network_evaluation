@@ -5,14 +5,14 @@ This repository contains scripts for network evaluation including
 - Computing cluster level statistics
 
 ## Clustering Accuracy
-This section describes the command and usage for computing the clustering accuracy of a disjoint clustering of a network given a disjoint ground-truth clustering. The input network and clustering files are  expected to be in a comma separated format without headers.
+This section describes the command and usage for computing the clustering accuracy of a disjoint clustering of a network given a disjoint ground-truth clustering. The input network and clustering files are expected to be in a comma separated format without headers.
 
 ```
 python <git root>/commdet_acc/compute_cd_accuracy.py --input-network <FILE> --gt-clustering <FILE> --est-clustering <FILE> --output-prefix <FILE PATH PREFIX> --num_processors <INT>
 ```
 ## Statistics
 ### Network Statistics
-This section describes the command and usage for computing network level statistics for a given network. The input network file is  expected to be in a comma separated format without headers.
+This section describes the command and usage for computing network level statistics for a given network. The input network file is expected to be in a comma separated format without headers.
 ```
 python <git root>/network_stats/compute_network_stats.py --network <FILE> --gt-clustering <FILE> --outdir <FILE PATH PREFIX> --overwrite <BOOL>
 ```
@@ -30,7 +30,7 @@ python <git root>/network_stats/compute_network_stats.py --network <FILE> --gt-c
 |concomp_sizes| sizes of the connected components|
 
 ### Clustering Statistics
-This section describes the command and usage for computing cluster level statistics for a given network and a clustering. The input network and clustering files are  expected to be in a comma separated format without headers.
+This section describes the command and usage for computing cluster level statistics for a given network and a clustering. The input network and clustering files are expected to be in a comma separated format without headers.
 ```
 python <git root>/network_stats/compute_cluster_stats.py --network <FILE> --community <FILE> --outdir <FILE PATH PREFIX>
 ```

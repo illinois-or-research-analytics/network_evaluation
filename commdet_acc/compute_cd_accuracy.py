@@ -11,6 +11,30 @@ from scipy.optimize import minimize_scalar
 from sklearn.metrics import pair_confusion_matrix
 import os
 
+NODE_COLUMN_NAMES = [
+    "node_id",
+    "node",
+    "vertex_id",
+    "vertex",
+    "source_id",
+    "source",
+    "target_id",
+    "target",
+    "node1_id",
+    "node1",
+    "node2_id",
+    "node2",
+]
+
+COMMUNITY_COLUMN_NAMES = [
+    "community_id",
+    "community",
+    "cluster_id",
+    "cluster",
+    "com_id",
+    "com",
+]
+
 
 def _compute_I_Hg_Hc(contingency_table):
     n = np.sum(contingency_table)
@@ -291,7 +315,14 @@ def get_node_set_edgelist(edgelist):
         for line in f:
             if line[0] == "#":
                 continue
-            u, v = line.strip().split(current_delimiter)
+            parts = line.strip().split(current_delimiter)
+            if (
+                len(parts) >= 2
+                and parts[0].lower() in NODE_COLUMN_NAMES
+                and parts[1].lower() in NODE_COLUMN_NAMES
+            ):
+                continue
+            u, v = parts[0], parts[1]
             node_set.add(u)
             node_set.add(v)
     return node_set
@@ -314,7 +345,14 @@ def get_node_set_clustering(filepath):
         for line in f:
             if line[0] == "#":
                 continue
-            node_id, cluster_id = line.strip().split(current_delimiter)
+            parts = line.strip().split(current_delimiter)
+            if (
+                len(parts) >= 2
+                and parts[0].lower() in NODE_COLUMN_NAMES
+                and parts[1].lower() in COMMUNITY_COLUMN_NAMES
+            ):
+                continue
+            node_id, cluster_id = parts[0], parts[1]
             if cluster_id not in cluster_to_node_id_dict:
                 cluster_to_node_id_dict[cluster_id] = []
             cluster_to_node_id_dict[cluster_id].append(node_id)
@@ -334,7 +372,14 @@ def read_clustering(filepath, original_to_integer_node_id_dict):
         for line in f:
             if line[0] == "#":
                 continue
-            node_id, cluster_id = line.strip().split(current_delimiter)
+            parts = line.strip().split(current_delimiter)
+            if (
+                len(parts) >= 2
+                and parts[0].lower() in NODE_COLUMN_NAMES
+                and parts[1].lower() in COMMUNITY_COLUMN_NAMES
+            ):
+                continue
+            node_id, cluster_id = parts[0], parts[1]
             if node_id in original_to_integer_node_id_dict:
                 current_partition[original_to_integer_node_id_dict[node_id]] = (
                     cluster_id
@@ -367,7 +412,14 @@ def get_edge_mask(edgelist, partition, original_to_integer_node_id_dict):
         for line in f:
             if line[0] == "#":
                 continue
-            u, v = line.strip().split(current_delimiter)
+            parts = line.strip().split(current_delimiter)
+            if (
+                len(parts) >= 2
+                and parts[0].lower() in NODE_COLUMN_NAMES
+                and parts[1].lower() in NODE_COLUMN_NAMES
+            ):
+                continue
+            u, v = parts[0], parts[1]
             u_cluster = partition[original_to_integer_node_id_dict[u]]
             v_cluster = partition[original_to_integer_node_id_dict[v]]
             edge_mask.append(u_cluster == v_cluster)
