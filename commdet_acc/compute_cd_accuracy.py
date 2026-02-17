@@ -1,15 +1,14 @@
-import numpy as np
-import graph_tool.all as gt
-from sklearn.metrics import adjusted_rand_score
-
-import multiprocessing as mp
+import os
 import argparse
 
+import numpy as np
+import graph_tool.all as gt
 import pandas as pd
 from scipy.special import gammaln
 from scipy.optimize import minimize_scalar
+from sklearn.metrics import adjusted_rand_score
 from sklearn.metrics import pair_confusion_matrix
-import os
+
 
 NODE_COLUMN_NAMES = [
     "node_id",
@@ -460,24 +459,6 @@ def get_cluster_node_pairs(partition):
     )
 
 
-def get_fnr_fpr(groundtruth_partition, estimated_partition, num_processors):
-    with mp.Pool(processes=num_processors) as pool:
-        results = pool.map(
-            get_cluster_node_pairs, [groundtruth_partition, estimated_partition]
-        )
-    tp = len(results[0].intersection(results[1]))
-    fn = len(results[0]) - tp
-    fp = len(results[1]) - tp
-    n = len(groundtruth_partition)
-    tn = int((n * (n - 1)) / 2) - len(results[1]) - fn
-    fnr = fn / (fn + tp)
-    fpr = fp / (fp + tn)
-    return {
-        "fnr": fnr,
-        "fpr": fpr,
-    }
-
-
 def file_has_value(filepath):
     if not os.path.exists(filepath):
         return False
@@ -492,17 +473,17 @@ def file_has_value(filepath):
 def calc_precision(gt, et, matrix=None):
     if matrix is None:
         matrix = pair_confusion_matrix(gt, et)
-    tp = matrix[1, 1]
-    fp = matrix[0, 1]
-    return tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    twice_tp = matrix[1, 1]
+    twice_fp = matrix[0, 1]
+    return twice_tp / (twice_tp + twice_fp) if (twice_tp + twice_fp) > 0 else 0.0
 
 
 def calc_recall(gt, et, matrix=None):
     if matrix is None:
         matrix = pair_confusion_matrix(gt, et)
-    tp = matrix[1, 1]
-    fn = matrix[1, 0]
-    return tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    twice_tp = matrix[1, 1]
+    twice_fn = matrix[1, 0]
+    return twice_tp / (twice_tp + twice_fn) if (twice_tp + twice_fn) > 0 else 0.0
 
 
 def calc_f1_score(gt, et, matrix=None):
@@ -520,17 +501,17 @@ def calc_f1_score(gt, et, matrix=None):
 def calc_fnr(gt, et, matrix=None):
     if matrix is None:
         matrix = pair_confusion_matrix(gt, et)
-    fn = matrix[1, 0]
-    tp = matrix[1, 1]
-    return fn / (fn + tp) if (fn + tp) > 0 else 0.0
+    twice_fn = matrix[1, 0]
+    twice_tp = matrix[1, 1]
+    return twice_fn / (twice_fn + twice_tp) if (twice_fn + twice_tp) > 0 else 0.0
 
 
 def calc_fpr(gt, et, matrix=None):
     if matrix is None:
         matrix = pair_confusion_matrix(gt, et)
-    fp = matrix[0, 1]
-    tn = matrix[0, 0]
-    return fp / (fp + tn) if (fp + tn) > 0 else 0.0
+    twice_fp = matrix[0, 1]
+    twice_tn = matrix[0, 0]
+    return twice_fp / (twice_fp + twice_tn) if (twice_fp + twice_tn) > 0 else 0.0
 
 
 def clustering_accuracy(
@@ -624,10 +605,12 @@ def clustering_accuracy(
         except Exception as e:
             print(f"Error writing AGRI: {e}")
 
-    # Write FNR, FPR, Precision, Recall, F1-score
-    # (metrics based on pair confusion matrix)
-    # to avoid redundant computation, we compute the pair confusion matrix once (if needed)
-    # and pass it to each function
+    # Write FNR, FPR, Precision, Recall, F1-score (metrics based on pair confusion matrix)
+    # to avoid redundant computation, we compute the pair confusion matrix once
+    # also note that we consider pairs of nodes
+    # so TP, FP, FN, TN are all doubled compared to the standard definition,
+    # but this does not affect the final metric values since they are ratios
+    # see more details in the documentation of sklearn.metrics.pair_confusion_matrix
     confusion_matrix = None
 
     fnr_path = output_prefix + ".fnr"
