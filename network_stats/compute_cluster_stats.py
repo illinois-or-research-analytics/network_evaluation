@@ -402,6 +402,7 @@ global_stats = {
     "global_n": None,
     "global_m": None,
     "node_coverage": None,
+    "n_outliers": None,
 }
 
 global_n = compute_global_n(neighbors)
@@ -412,6 +413,7 @@ node_coverage = compute_node_coverage(outliers, global_n)
 global_stats["global_n"] = global_n
 global_stats["global_m"] = global_m
 global_stats["node_coverage"] = node_coverage
+global_stats["n_outliers"] = n_outliers
 
 # Compute node stats and output a dataframe
 node_stats = {

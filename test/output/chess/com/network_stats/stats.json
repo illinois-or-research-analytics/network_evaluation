@@ -1,0 +1,9 @@
+{
+    "n_nodes": 7301,
+    "n_edges": 55959,
+    "n_concomp": 76,
+    "deg_assort": 0.5966106486656317,
+    "global_ccoeff": 0.0730680317997338,
+    "local_ccoeff": 0.0970595809218425,
+    "diameter": 12
+}

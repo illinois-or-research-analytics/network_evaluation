@@ -11,7 +11,7 @@ import sys
 import argparse
 
 STATS_JSON_FILENAME = "stats.json"
-NODE_ORDERING_IDX_FILENAME = "node_ordering.idx"
+NODE_ORDERING_IDX_FILENAME = "node.idx"
 
 NODE_COLUMN_NAMES = [
     "node_id",
