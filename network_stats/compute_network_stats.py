@@ -1,14 +1,14 @@
 import json
+import argparse
 from pathlib import Path
+import logging
+import time
+import sys
 
 import numpy as np
-import networkit as nk
 import pandas as pd
-
-import time
-import logging
-import sys
-import argparse
+import graph_tool.all as gt
+from scipy.sparse import linalg as la
 
 STATS_JSON_FILENAME = "stats.json"
 NODE_ORDERING_IDX_FILENAME = "node.idx"
@@ -32,16 +32,30 @@ SCALAR_STATS = {
     "n_nodes",
     "n_edges",
     "n_concomp",
+    "mean_degree",
     "deg_assort",
+    "mean_kcore",
     "global_ccoeff",
     "local_ccoeff",
-    "diameter",
+    "pseudo_diameter",
+    # "l_eigval_A",
+    # "l_eigval_H",
+    "char_time",
+    "node_percolation_targeted",
+    "node_percolation_random",
+    "frac_giant_ccomp",
 }
 
 DISTR_STATS = {
-    "degree",
     "concomp_sizes",
+    "degree",
+    "local_ccoeff_nodes",
+    "pagerank",
+    "kcore",
+    # "betweenness",
 }
+
+# --- IO Helpers ---
 
 
 def detect_delimiter(file_path):
@@ -56,7 +70,7 @@ def detect_delimiter(file_path):
             if " " in line:
                 return " "
             break
-    print("[WARNING] Could not detect delimiter...")
+    logging.warning("Could not detect delimiter, defaulting to ','")
     return ","
 
 
@@ -66,180 +80,10 @@ def check_if_header_exists(filepath, delimiter):
             if line.strip().startswith("#") or not line.strip():
                 continue
             parts = line.strip().split(delimiter)
-            if (
-                len(parts) >= 2
-                and parts[0].lower() in NODE_COLUMN_NAMES
-                and parts[1].lower() in NODE_COLUMN_NAMES
-            ):
+            if len(parts) >= 2 and parts[0].lower() in NODE_COLUMN_NAMES:
                 return True
             return False
     return False
-
-
-def compute_stats(input_network, output_dir, overwrite):
-    # TODO: globally caching some intermediate results
-    # TODO: refactor by abstracting the statistics
-    # TODO: better profile memory and CPU usage
-
-    job_start_time = time.perf_counter()
-
-    # Prepare output folder
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Start logging
-    prepare_logging(output_dir, overwrite)
-
-    # Prepare agenda
-    stats_to_compute = SCALAR_STATS | DISTR_STATS
-
-    if not overwrite:
-        existing_scalar_stats_file = output_dir / STATS_JSON_FILENAME
-        existing_scalar_stats_dict = {}
-        if existing_scalar_stats_file.is_file():
-            with existing_scalar_stats_file.open("r") as f:
-                existing_scalar_stats_dict = json.load(f)
-        stats_to_compute -= set(existing_scalar_stats_dict.keys())
-
-        existing_distr_stats_files = output_dir.glob("*.distribution")
-        existing_distr_stats_names = [
-            Path(existing_distr_stats_file).stem
-            for existing_distr_stats_file in existing_distr_stats_files
-        ]
-        stats_to_compute -= set(existing_distr_stats_names)
-
-    scalar_stats = {}
-    distr_stats = {}
-
-    # Determine the delimiter
-    delimiter = detect_delimiter(input_network)
-
-    logging.info("Reading input network")
-    start_time = time.perf_counter()
-
-    has_header = check_if_header_exists(input_network, delimiter)
-    header_arg = 0 if has_header else None
-    logging.info(f"Header detected: {has_header}")
-
-    df = pd.read_csv(
-        input_network, sep=delimiter, header=header_arg, comment="#", dtype=str
-    )
-
-    if header_arg is None:
-        df.rename(columns={0: "Source", 1: "Target"}, inplace=True)
-    else:
-        df.columns.values[0] = "Source"
-        df.columns.values[1] = "Target"
-
-    unique_nodes = pd.unique(df.iloc[:, [0, 1]].values.ravel("K"))
-
-    node_mapping_dict = {name: i for i, name in enumerate(unique_nodes)}
-    src_ids = df.iloc[:, 0].map(node_mapping_dict).values.astype(np.uint64)
-    tgt_ids = df.iloc[:, 1].map(node_mapping_dict).values.astype(np.uint64)
-
-    n_nodes = len(unique_nodes)
-    graph = nk.GraphFromCoo((src_ids, tgt_ids), n=n_nodes, directed=False)
-    graph.removeMultiEdges()
-    graph.removeSelfLoops()
-
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    logging.info("Generating node mapping and ordering.")
-    start_time = time.perf_counter()
-
-    node_order = list(graph.iterNodes())
-    with open(output_dir / NODE_ORDERING_IDX_FILENAME, "w") as idx_f:
-        node_ordering_idx_list = [[unique_nodes[node_iid]] for node_iid in node_order]
-        df_out = pd.DataFrame(node_ordering_idx_list)
-        df_out.to_csv(idx_f, sep=",", header=False, index=False)
-
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Number of nodes
-    logging.info("Stats - Number of nodes")
-    start_time = time.perf_counter()
-    if "n_nodes" in stats_to_compute:
-        n_nodes = compute_n_nodes(graph)
-        scalar_stats["n_nodes"] = n_nodes
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Number of edges
-    logging.info("Stats - Number of edges")
-    start_time = time.perf_counter()
-    if "n_edges" in stats_to_compute:
-        n_edges = compute_n_edges(graph)
-        scalar_stats["n_edges"] = n_edges
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Number of connected components and connected components size distribution
-    logging.info(
-        "Stats - Number of connected components and connected components size distribution"
-    )
-    start_time = time.perf_counter()
-    if "n_concomp" in stats_to_compute or "concomp_sizes" in stats_to_compute:
-        n_concomp, concomp_sizes_distr = get_cc_stats(graph)
-        scalar_stats["n_concomp"] = n_concomp
-        distr_stats["concomp_sizes"] = concomp_sizes_distr
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Degree assortativity
-    logging.info("Stats - Degree assortativity")
-    start_time = time.perf_counter()
-    if "deg_assort" in stats_to_compute:
-        deg_assort = compute_deg_assort(graph)
-        scalar_stats["deg_assort"] = deg_assort
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # S6 - Global Clustering Coefficient
-    logging.info("Stats - Global clustering coefficient")
-    start_time = time.perf_counter()
-    if "global_ccoeff" in stats_to_compute:
-        global_ccoeff = compute_global_ccoeff(graph)
-        scalar_stats["global_ccoeff"] = global_ccoeff
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Average Local Clustering Coefficient
-    logging.info("Stats - Average Local clustering coefficient")
-    start_time = time.perf_counter()
-    if "local_ccoeff" in stats_to_compute:
-        local_ccoeff = compute_local_ccoeff(graph)
-        scalar_stats["local_ccoeff"] = local_ccoeff
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Degree distribution
-    logging.info("Stats - Degree distribution")
-    start_time = time.perf_counter()
-    if "degree" in stats_to_compute:
-        deg_distr = compute_deg_distr(graph, node_order)
-        distr_stats["degree"] = deg_distr
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Diameter
-    logging.info("Stats - Diameter")
-    start_time = time.perf_counter()
-    if "diameter" in stats_to_compute:
-        diameter = compute_diameter(graph)
-        scalar_stats["diameter"] = diameter
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Save scalar statistics
-    logging.info("Saving scalar statistics")
-    start_time = time.perf_counter()
-    save_scalar_stats(output_dir, scalar_stats, overwrite)
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    # Save distribution statistics
-    logging.info("Saving distribution statistics")
-    start_time = time.perf_counter()
-    save_distr_stats(output_dir, distr_stats, overwrite)
-    logging.info(f"Time taken: {time.perf_counter() - start_time:.3f} seconds")
-
-    logging.info(
-        f"Total time taken: {time.perf_counter() - job_start_time:.3f} seconds"
-    )
-
-    # Save done file
-    (output_dir / "done").touch()
 
 
 def prepare_logging(output_dir, is_overwrite):
@@ -252,116 +96,267 @@ def prepare_logging(output_dir, is_overwrite):
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
 
-def save_distr_stats(output_dir, distr_stats_dict, overwrite):
-    distribution_arr = output_dir.glob("*.distribution")
-    distribution_name_arr = [
-        Path(current_distribution_file).stem
-        for current_distribution_file in distribution_arr
-    ]
-
-    for distr_stat in distr_stats_dict.keys():
-        if f"{distr_stat}.distribution" in distribution_name_arr and not overwrite:
-            continue
-
-        with open(output_dir / f"{distr_stat}.distribution", "w") as distr_f:
-            distr_stat_list = [[v] for v in distr_stats_dict.get(distr_stat)]
-            df = pd.DataFrame(distr_stat_list)
-            df.to_csv(distr_f, sep="\t", header=False, index=False)
+# --- Caching Helpers ---
 
 
-def save_scalar_stats(output_dir, stats_to_save, overwrite):
-    stats_file = output_dir / STATS_JSON_FILENAME
-    stats_dict = {}
-    if stats_file.is_file():
-        with stats_file.open("r") as f:
-            stats_dict = json.load(f)
-
-    for stat, value in stats_to_save.items():
-        if stat not in stats_dict or overwrite:
-            stats_dict[stat] = value
-
-    with stats_file.open("w") as f:
-        json.dump(stats_dict, f, indent=4)
+def get_out_degrees(G, cache):
+    if "out_degrees" not in cache:
+        cache["out_degrees"] = G.get_out_degrees(G.get_vertices())
+    return cache["out_degrees"]
 
 
-def compute_n_edges(graph):
-    return graph.numberOfEdges()
+def get_components(G, cache):
+    if "components" not in cache:
+        _, hist = gt.label_components(G)
+        cache["components"] = hist
+    return cache["components"]
 
 
-def compute_n_nodes(graph):
-    return graph.numberOfNodes()
+def get_local_clustering(G, cache):
+    if "local_clustering" not in cache:
+        cache["local_clustering"] = gt.local_clustering(G).a
+    return cache["local_clustering"]
 
 
-def compute_global_ccoeff(graph):
-    return nk.globals.ClusteringCoefficient.exactGlobal(graph)
+def get_largest_cc(G, cache):
+    if "largest_cc" not in cache:
+        cache["largest_cc"] = gt.extract_largest_component(G, prune=False)
+    return cache["largest_cc"]
 
 
-def compute_local_ccoeff(graph):
-    return nk.globals.ClusteringCoefficient.sequentialAvgLocal(graph)
+def get_kcore(G, cache):
+    if "kcore" not in cache:
+        cache["kcore"] = gt.kcore_decomposition(G).a
+    return cache["kcore"]
 
 
-def compute_deg_assort(graph):
-    """Compute degree assortativity using NetworKit."""
-    # Compute degree for every node
-    dc = nk.centrality.DegreeCentrality(graph)
-    dc.run()
-    # Compute correlation
-    assortativity = nk.correlation.Assortativity(graph, dc.scores())
-    assortativity.run()
-    return assortativity.getCoefficient()
+# --- Metric Functions ---
 
 
-def compute_deg_distr(graph, node_order):
-    return [graph.degree(v) for v in node_order]
+def compute_n_nodes(G, cache):
+    return int(G.num_vertices())
 
 
-def get_cc_stats(graph):
-    cc = nk.components.ConnectedComponents(graph)
-    cc.run()
-    num_cc = cc.numberOfComponents()
-    cc_size_distribution = cc.getComponentSizes()
-    return num_cc, cc_size_distribution.values()
+def compute_n_edges(G, cache):
+    return int(G.num_edges())
 
 
-def compute_diameter(graph):
-    if graph.numberOfNodes() == 0:
-        return 0
-    connected_graph = (
-        nk.components.ConnectedComponents.extractLargestConnectedComponent(graph, True)
+def compute_mean_degree(G, cache):
+    return float(np.mean(get_out_degrees(G, cache)))
+
+
+def compute_n_concomp(G, cache):
+    return int(len(get_components(G, cache)))
+
+
+def compute_local_ccoeff_mean(G, cache):
+    return float(np.mean(get_local_clustering(G, cache)))
+
+
+def compute_deg_assort(G, cache):
+    return float(gt.scalar_assortativity(G, "total")[0])
+
+
+def compute_mean_kcore(G, cache):
+    return float(np.mean(get_kcore(G, cache)))
+
+
+def compute_global_ccoeff(G, cache):
+    return float(gt.global_clustering(G)[0])
+
+
+def compute_pseudo_diameter(G, cache):
+    return float(gt.pseudo_diameter(G)[0])
+
+
+def compute_l_eigval_A(G, cache):
+    return float(gt.eigenvector(G)[0])
+
+
+def compute_l_eigval_H(G, cache):
+    H_mtx = gt.hashimoto(G)
+    eigvals_H = la.eigs(H_mtx, k=1, return_eigenvectors=False, which="LR")
+    return float(eigvals_H[0].real)
+
+
+def compute_char_time(G, cache):
+    largest_cc_view = gt.extract_largest_component(G, prune=True)
+    T = gt.transition(largest_cc_view)
+    eigvals_T = la.eigs(T, k=2, return_eigenvectors=False, which="LR")
+    sorted_eigvals = np.sort(eigvals_T.real)
+    return float(-1 / np.log(sorted_eigvals[-2]))
+
+
+def compute_percolation_targeted(G, cache):
+    vertices = sorted(
+        [v for v in G.vertices()], key=lambda v: v.out_degree(), reverse=True
     )
-    diam = nk.distance.Diameter(connected_graph, algo=1)
-    diam.run()
-    diameter = diam.getDiameter()
-    return diameter[0]
+    sizes, _ = gt.vertex_percolation(G, vertices)
+    return float(np.mean(sizes) / G.num_vertices())
+
+
+def compute_percolation_random(G, cache):
+    n_trials = 5
+    Rr = 0.0
+    vertices = list(G.vertices())
+    for _ in range(n_trials):
+        np.random.shuffle(vertices)
+        sizes2, _ = gt.vertex_percolation(G, vertices)
+        Rr += np.mean(sizes2) / G.num_vertices() / n_trials
+    return float(Rr)
+
+
+def compute_frac_giant_comp(G, cache):
+    return float(get_largest_cc(G, cache).num_vertices() / G.num_vertices())
+
+
+def compute_degree_dist(G, cache):
+    return get_out_degrees(G, cache)
+
+
+def compute_concomp_sizes(G, cache):
+    return get_components(G, cache).tolist()
+
+
+def compute_local_ccoeff_dist(G, cache):
+    return get_local_clustering(G, cache)
+
+
+def compute_pagerank_dist(G, cache):
+    return gt.pagerank(G).a
+
+
+def compute_betweenness_dist(G, cache):
+    return gt.betweenness(G)[0].a
+
+
+def compute_kcore_dist(G, cache):
+    return get_kcore(G, cache)
+
+
+# --- Dispatchers ---
+
+SCALAR_DISPATCH = {
+    "n_nodes": compute_n_nodes,
+    "n_edges": compute_n_edges,
+    "n_concomp": compute_n_concomp,
+    "mean_degree": compute_mean_degree,
+    "deg_assort": compute_deg_assort,
+    "mean_kcore": compute_mean_kcore,
+    "global_ccoeff": compute_global_ccoeff,
+    "local_ccoeff": compute_local_ccoeff_mean,
+    "pseudo_diameter": compute_pseudo_diameter,
+    "l_eigval_A": compute_l_eigval_A,
+    "l_eigval_H": compute_l_eigval_H,
+    "char_time": compute_char_time,
+    "node_percolation_targeted": compute_percolation_targeted,
+    "node_percolation_random": compute_percolation_random,
+    "frac_giant_ccomp": compute_frac_giant_comp,
+}
+
+DISTR_DISPATCH = {
+    "degree": compute_degree_dist,
+    "concomp_sizes": compute_concomp_sizes,
+    "local_ccoeff_nodes": compute_local_ccoeff_dist,
+    "pagerank": compute_pagerank_dist,
+    "betweenness": compute_betweenness_dist,
+    "kcore": compute_kcore_dist,
+}
+
+# --- Main Pipeline ---
+
+
+def compute_stats(input_network, output_dir, overwrite):
+    job_start_time = time.perf_counter()
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prepare_logging(output_dir, overwrite)
+
+    stats_to_compute = SCALAR_STATS | DISTR_STATS
+
+    if not overwrite:
+        existing_scalar_stats_file = output_dir / STATS_JSON_FILENAME
+        if existing_scalar_stats_file.is_file():
+            with existing_scalar_stats_file.open("r") as f:
+                stats_to_compute -= set(json.load(f).keys())
+
+        existing_distr_stats_files = output_dir.glob("*.distribution")
+        stats_to_compute -= set([Path(f).stem for f in existing_distr_stats_files])
+
+    scalar_stats = {}
+    distr_stats = {}
+    computation_cache = {}
+
+    delimiter = detect_delimiter(input_network)
+    has_header = check_if_header_exists(input_network, delimiter)
+    header_arg = 0 if has_header else None
+
+    logging.info("Building graph via hashed edge list...")
+    start_time = time.perf_counter()
+
+    df = pd.read_csv(
+        input_network, sep=delimiter, header=header_arg, comment="#", dtype=str
+    )
+    edge_list = df.iloc[:, [0, 1]].values.astype(str)
+
+    G = gt.Graph(directed=False)
+    v_name = G.add_edge_list(edge_list, hashed=True)
+    G.vertex_properties["name"] = v_name
+
+    gt.remove_parallel_edges(G)
+    gt.remove_self_loops(G)
+    logging.info(f"Graph built in {time.perf_counter() - start_time:.3f}s")
+
+    logging.info("Saving canonical node ordering (node.idx)...")
+    start_time = time.perf_counter()
+    node_names_ordered = [v_name[v] for v in G.vertices()]
+    with open(output_dir / NODE_ORDERING_IDX_FILENAME, "w") as idx_f:
+        pd.Series(node_names_ordered).to_csv(idx_f, index=False, header=False)
+    logging.info(f"node.idx saved in {time.perf_counter() - start_time:.3f}s")
+
+    for stat_name, compute_fn in SCALAR_DISPATCH.items():
+        if stat_name in stats_to_compute:
+            logging.info(f"Computing {stat_name}...")
+            start = time.perf_counter()
+            scalar_stats[stat_name] = compute_fn(G, computation_cache)
+            logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
+
+    for stat_name, compute_fn in DISTR_DISPATCH.items():
+        if stat_name in stats_to_compute:
+            logging.info(f"Computing {stat_name}...")
+            start = time.perf_counter()
+            distr_stats[stat_name] = compute_fn(G, computation_cache)
+            logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
+
+    if scalar_stats:
+        stats_file = output_dir / STATS_JSON_FILENAME
+        existing = {}
+        if stats_file.is_file() and not overwrite:
+            with stats_file.open("r") as f:
+                existing = json.load(f)
+        existing.update(scalar_stats)
+        with stats_file.open("w") as f:
+            json.dump(existing, f, indent=4)
+
+    if distr_stats:
+        for stat_name, data in distr_stats.items():
+            distr_file = output_dir / f"{stat_name}.distribution"
+            if distr_file.exists() and not overwrite:
+                continue
+            with open(distr_file, "w") as f:
+                pd.DataFrame(data).to_csv(f, sep="\t", header=False, index=False)
+
+    logging.info(f"Total time taken: {time.perf_counter() - job_start_time:.3f}s")
+    (output_dir / "done").touch()
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(
-        description="Compute statistics for a network and clustering."
-    )
+    parser = argparse.ArgumentParser(description="Compute statistics for a network.")
+    parser.add_argument("--network", required=True, type=str, help="Input network file")
+    parser.add_argument("--outdir", required=True, type=str, help="Output directory")
     parser.add_argument(
-        "--network",
-        required=True,
-        type=str,
-        help="Input network",
+        "--overwrite", action="store_true", help="Overwrite existing output files"
     )
-    parser.add_argument(
-        "--outdir",
-        required=True,
-        type=str,
-        help="Output folder",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Whether to overwrite existing data",
-    )
-
     args = parser.parse_args()
 
-    compute_stats(
-        args.network,
-        args.outdir,
-        args.overwrite,
-    )
+    compute_stats(args.network, args.outdir, args.overwrite)

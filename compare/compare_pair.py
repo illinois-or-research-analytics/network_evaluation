@@ -40,14 +40,25 @@ NETWORK_SCALAR_STATS = [
     "n_nodes",
     "n_edges",
     "n_concomp",
+    "mean_degree",
     "deg_assort",
+    "mean_kcore",
     "global_ccoeff",
     "local_ccoeff",
-    "diameter",
+    "pseudo_diameter",
+    "char_time",
+    "node_percolation_targeted",
+    "node_percolation_random",
+    "frac_giant_ccomp",
 ]
 
-# Split distributions into those that map to nodes vs those that are general
-NETWORK_NODE_DISTR_STATS = ["degree"]
+NETWORK_NODE_DISTR_STATS = [
+    "degree",
+    "local_ccoeff_nodes",
+    "pagerank",
+    "betweenness",
+    "kcore",
+]
 NETWORK_GENERAL_DISTR_STATS = ["concomp_sizes"]
 
 
