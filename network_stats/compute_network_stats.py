@@ -86,10 +86,10 @@ def check_if_header_exists(filepath, delimiter):
     return False
 
 
-def prepare_logging(output_dir, is_overwrite):
+def prepare_logging(output_dir):
     logging.basicConfig(
         filename=output_dir / "run.log",
-        filemode="w" if is_overwrite else "a",
+        filemode="w",
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
     )
@@ -266,23 +266,13 @@ DISTR_DISPATCH = {
 # --- Main Pipeline ---
 
 
-def compute_stats(input_network, output_dir, overwrite):
+def compute_stats(input_network, output_dir):
     job_start_time = time.perf_counter()
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    prepare_logging(output_dir, overwrite)
+    prepare_logging(output_dir)
 
     stats_to_compute = SCALAR_STATS | DISTR_STATS
-
-    if not overwrite:
-        existing_scalar_stats_file = output_dir / STATS_JSON_FILENAME
-        if existing_scalar_stats_file.is_file():
-            with existing_scalar_stats_file.open("r") as f:
-                stats_to_compute -= set(json.load(f).keys())
-
-        existing_distr_stats_files = output_dir.glob("*.distribution")
-        stats_to_compute -= set([Path(f).stem for f in existing_distr_stats_files])
-
     scalar_stats = {}
     distr_stats = {}
     computation_cache = {}
@@ -330,33 +320,22 @@ def compute_stats(input_network, output_dir, overwrite):
 
     if scalar_stats:
         stats_file = output_dir / STATS_JSON_FILENAME
-        existing = {}
-        if stats_file.is_file() and not overwrite:
-            with stats_file.open("r") as f:
-                existing = json.load(f)
-        existing.update(scalar_stats)
         with stats_file.open("w") as f:
-            json.dump(existing, f, indent=4)
+            json.dump(scalar_stats, f, indent=4)
 
     if distr_stats:
         for stat_name, data in distr_stats.items():
             distr_file = output_dir / f"{stat_name}.distribution"
-            if distr_file.exists() and not overwrite:
-                continue
             with open(distr_file, "w") as f:
                 pd.DataFrame(data).to_csv(f, sep="\t", header=False, index=False)
 
     logging.info(f"Total time taken: {time.perf_counter() - job_start_time:.3f}s")
-    (output_dir / "done").touch()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compute statistics for a network.")
     parser.add_argument("--network", required=True, type=str, help="Input network file")
     parser.add_argument("--outdir", required=True, type=str, help="Output directory")
-    parser.add_argument(
-        "--overwrite", action="store_true", help="Overwrite existing output files"
-    )
     args = parser.parse_args()
 
-    compute_stats(args.network, args.outdir, args.overwrite)
+    compute_stats(args.network, args.outdir)
