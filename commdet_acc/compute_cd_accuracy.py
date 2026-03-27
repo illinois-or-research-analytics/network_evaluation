@@ -1,7 +1,6 @@
 import os
 import argparse
 import hashlib
-import json
 import logging
 import sys
 from pathlib import Path
@@ -16,61 +15,92 @@ from sklearn.metrics import adjusted_rand_score, pair_confusion_matrix
 # State Tracking
 # ==========================================
 class StateTracker:
-    """Tracks computation state by enforcing cryptographic integrity on both inputs and outputs."""
+    """Tracks computation state by maintaining a sha256sum compatible 'done' file via atomic writes."""
 
     def __init__(self, output_dir, input_files):
         self.output_dir = Path(output_dir)
-        self.state_file = self.output_dir / ".computation_state.json"
-        self.input_hash = self._compute_file_hash(input_files)
-        self.state = self._load_state()
+        self.done_file = self.output_dir / "done"
+        self.input_files = [str(f) for f in input_files if f and os.path.exists(f)]
+        self.current_input_hashes = {
+            f: self._compute_file_hash(f) for f in self.input_files
+        }
+        self.completed_outputs = self._load_state()
 
-    def _compute_file_hash(self, files):
-        """Computes a combined SHA-256 hash of one or multiple files."""
+    def _compute_file_hash(self, filepath):
+        if not os.path.exists(filepath):
+            return None
         hasher = hashlib.sha256()
-        file_list = files if isinstance(files, list) else [files]
-        for f in sorted(file_list):
-            if f and os.path.exists(f):
-                with open(f, "rb") as file_obj:
-                    for chunk in iter(lambda: file_obj.read(65536), b""):
-                        hasher.update(chunk)
-        return hasher.hexdigest()
+        try:
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except OSError:
+            return None
 
     def _load_state(self):
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, "r") as f:
-                    data = json.load(f)
-                    if data.get("input_hash") == self.input_hash:
-                        return data
-            except json.JSONDecodeError:
-                pass
-        return {"input_hash": self.input_hash, "completed_metrics": {}}
+        completed = {}
+        if not self.done_file.exists():
+            return completed
 
-    def is_done(self, metric_name, output_filepath):
-        if self.state.get("input_hash") != self.input_hash:
+        recorded_hashes = {}
+        try:
+            with open(self.done_file, "r") as f:
+                for line in f:
+                    parts = line.strip().split("  ", 1)
+                    if len(parts) == 2:
+                        recorded_hashes[parts[1]] = parts[0]
+        except Exception:
+            pass
+
+        inputs_match = True
+        for f, h in self.current_input_hashes.items():
+            if recorded_hashes.get(f) != h:
+                inputs_match = False
+                break
+
+        if not inputs_match:
+            return completed
+
+        for filepath, h in recorded_hashes.items():
+            if filepath not in self.current_input_hashes:
+                completed[filepath] = h
+
+        return completed
+
+    def is_done(self, output_filepath):
+        out_path = str(output_filepath)
+        if out_path not in self.completed_outputs:
             return False
-
-        completed = self.state.get("completed_metrics", {})
-        if metric_name not in completed:
+        current_hash = self._compute_file_hash(out_path)
+        if current_hash is None:
             return False
-
-        out_path = Path(output_filepath)
-        if not out_path.exists():
-            return False
-
-        if completed[metric_name] != self._compute_file_hash([output_filepath]):
+        if self.completed_outputs[out_path] != current_hash:
             return False
         return True
 
-    def mark_done(self, metric_name, output_filepath):
-        if self.state.get("input_hash") != self.input_hash:
-            self.state = {"input_hash": self.input_hash, "completed_metrics": {}}
+    def mark_done(self, output_filepath):
+        out_path = str(output_filepath)
+        h = self._compute_file_hash(out_path)
+        if h is None:
+            return  # File disappeared before hashing
 
-        self.state["completed_metrics"][metric_name] = self._compute_file_hash(
-            [output_filepath]
-        )
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=4)
+        self.completed_outputs[out_path] = h
+        self._write_state_atomically()
+
+    def _write_state_atomically(self):
+        tmp_file = self.done_file.with_suffix(".tmp")
+        try:
+            with open(tmp_file, "w") as f:
+                for filepath, h in self.current_input_hashes.items():
+                    f.write(f"{h}  {filepath}\n")
+                for filepath, h in self.completed_outputs.items():
+                    f.write(f"{h}  {filepath}\n")
+            tmp_file.replace(self.done_file)
+        except Exception as e:
+            logging.warning(f"Failed to atomically write state tracking file: {e}")
+            if tmp_file.exists():
+                tmp_file.unlink()
 
 
 # ==========================================
@@ -173,9 +203,6 @@ def load_clustering_df(filepath):
     return df
 
 
-# ==========================================
-# Data Processing Helpers
-# ==========================================
 def get_node_set_edgelist(edgelist):
     df = load_edgelist_df(edgelist)
     if df.empty:
@@ -232,7 +259,7 @@ def cleanup_extra_files(output_dir, expected_filenames):
             fname = file_path.name
             if fname in expected_filenames:
                 continue
-            if fname.endswith(".log") or fname in ("done", ".computation_state.json"):
+            if fname.endswith(".log") or fname == "done":
                 continue
             try:
                 file_path.unlink()
@@ -310,7 +337,7 @@ def clustering_accuracy(
     )
     expected_files = {f"{prefix_base}.{m}" for m in EXPECTED_METRICS}
 
-    if all(tracker.is_done(m, output_prefix + f".{m}") for m in EXPECTED_METRICS):
+    if all(tracker.is_done(f"{output_prefix}.{m}") for m in EXPECTED_METRICS):
         logging.info("All specified accuracy metrics already computed. Exiting early.")
         cleanup_extra_files(out_dir, expected_files)
         return
@@ -325,7 +352,6 @@ def clustering_accuracy(
         node_set = estimated_node_set
 
     original_to_integer_node_id_dict = create_mapping(node_set)
-
     if len(original_to_integer_node_id_dict) == 0:
         raise ValueError("No nodes found in the specified node set.")
 
@@ -337,46 +363,46 @@ def clustering_accuracy(
     )
 
     if "node_coverage" in EXPECTED_METRICS and not tracker.is_done(
-        "node_coverage", output_prefix + ".node_coverage"
+        f"{output_prefix}.node_coverage"
     ):
         try:
             logging.info("Computing node_coverage...")
             val = float(len(estimated_node_set)) / original_node_set_length
             pd.Series([val]).to_csv(
-                output_prefix + ".node_coverage", index=False, header=False
+                f"{output_prefix}.node_coverage", index=False, header=False
             )
-            tracker.mark_done("node_coverage", output_prefix + ".node_coverage")
+            tracker.mark_done(f"{output_prefix}.node_coverage")
         except Exception as e:
             logging.error(f"Error computing node_coverage: {e}")
 
-    if "nmi" in EXPECTED_METRICS and not tracker.is_done("nmi", output_prefix + ".nmi"):
+    if "nmi" in EXPECTED_METRICS and not tracker.is_done(f"{output_prefix}.nmi"):
         try:
             logging.info("Computing nmi...")
             val = gt.mutual_information(
                 groundtruth_partition, estimated_partition, norm=True, adjusted=False
             )
-            pd.Series([val]).to_csv(output_prefix + ".nmi", index=False, header=False)
-            tracker.mark_done("nmi", output_prefix + ".nmi")
+            pd.Series([val]).to_csv(f"{output_prefix}.nmi", index=False, header=False)
+            tracker.mark_done(f"{output_prefix}.nmi")
         except Exception as e:
             logging.error(f"Error computing nmi: {e}")
 
-    if "ami" in EXPECTED_METRICS and not tracker.is_done("ami", output_prefix + ".ami"):
+    if "ami" in EXPECTED_METRICS and not tracker.is_done(f"{output_prefix}.ami"):
         try:
             logging.info("Computing ami...")
             val = gt.mutual_information(
                 groundtruth_partition, estimated_partition, adjusted=True
             )
-            pd.Series([val]).to_csv(output_prefix + ".ami", index=False, header=False)
-            tracker.mark_done("ami", output_prefix + ".ami")
+            pd.Series([val]).to_csv(f"{output_prefix}.ami", index=False, header=False)
+            tracker.mark_done(f"{output_prefix}.ami")
         except Exception as e:
             logging.error(f"Error computing ami: {e}")
 
-    if "ari" in EXPECTED_METRICS and not tracker.is_done("ari", output_prefix + ".ari"):
+    if "ari" in EXPECTED_METRICS and not tracker.is_done(f"{output_prefix}.ari"):
         try:
             logging.info("Computing ari...")
             val = adjusted_rand_score(groundtruth_partition, estimated_partition)
-            pd.Series([val]).to_csv(output_prefix + ".ari", index=False, header=False)
-            tracker.mark_done("ari", output_prefix + ".ari")
+            pd.Series([val]).to_csv(f"{output_prefix}.ari", index=False, header=False)
+            tracker.mark_done(f"{output_prefix}.ari")
         except Exception as e:
             logging.error(f"Error computing ari: {e}")
 
@@ -390,7 +416,7 @@ def clustering_accuracy(
     cm_needed = [
         m
         for m in cm_funcs
-        if m in EXPECTED_METRICS and not tracker.is_done(m, output_prefix + f".{m}")
+        if m in EXPECTED_METRICS and not tracker.is_done(f"{output_prefix}.{m}")
     ]
 
     if cm_needed:
@@ -405,9 +431,9 @@ def clustering_accuracy(
                 try:
                     val = cm_funcs[name](confusion_matrix)
                     pd.Series([val]).to_csv(
-                        output_prefix + f".{name}", index=False, header=False
+                        f"{output_prefix}.{name}", index=False, header=False
                     )
-                    tracker.mark_done(name, output_prefix + f".{name}")
+                    tracker.mark_done(f"{output_prefix}.{name}")
                 except Exception as e:
                     logging.error(f"Error computing {name}: {e}")
         except Exception as e:

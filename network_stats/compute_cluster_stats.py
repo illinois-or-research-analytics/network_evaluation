@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 import hashlib
-import json
 import logging
 import os
 import sys
@@ -14,60 +13,92 @@ from pymincut.pygraph import PyGraph
 # State Tracking
 # ==========================================
 class StateTracker:
-    """Tracks computation state by enforcing cryptographic integrity on both inputs and outputs."""
+    """Tracks computation state by maintaining a sha256sum compatible 'done' file via atomic writes."""
 
     def __init__(self, output_dir, input_files):
         self.output_dir = Path(output_dir)
-        self.state_file = self.output_dir / ".computation_state.json"
-        self.input_hash = self._compute_file_hash(input_files)
-        self.state = self._load_state()
+        self.done_file = self.output_dir / "done"
+        self.input_files = [str(f) for f in input_files if f and os.path.exists(f)]
+        self.current_input_hashes = {
+            f: self._compute_file_hash(f) for f in self.input_files
+        }
+        self.completed_outputs = self._load_state()
 
-    def _compute_file_hash(self, files):
+    def _compute_file_hash(self, filepath):
+        if not os.path.exists(filepath):
+            return None
         hasher = hashlib.sha256()
-        file_list = files if isinstance(files, list) else [files]
-        for f in sorted(file_list):
-            if f and os.path.exists(f):
-                with open(f, "rb") as file_obj:
-                    for chunk in iter(lambda: file_obj.read(65536), b""):
-                        hasher.update(chunk)
-        return hasher.hexdigest()
+        try:
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except OSError:
+            return None
 
     def _load_state(self):
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, "r") as f:
-                    data = json.load(f)
-                    if data.get("input_hash") == self.input_hash:
-                        return data
-            except json.JSONDecodeError:
-                pass
-        return {"input_hash": self.input_hash, "completed_metrics": {}}
+        completed = {}
+        if not self.done_file.exists():
+            return completed
 
-    def is_done(self, metric_name, output_filepath):
-        if self.state.get("input_hash") != self.input_hash:
+        recorded_hashes = {}
+        try:
+            with open(self.done_file, "r") as f:
+                for line in f:
+                    parts = line.strip().split("  ", 1)
+                    if len(parts) == 2:
+                        recorded_hashes[parts[1]] = parts[0]
+        except Exception:
+            pass
+
+        inputs_match = True
+        for f, h in self.current_input_hashes.items():
+            if recorded_hashes.get(f) != h:
+                inputs_match = False
+                break
+
+        if not inputs_match:
+            return completed
+
+        for filepath, h in recorded_hashes.items():
+            if filepath not in self.current_input_hashes:
+                completed[filepath] = h
+
+        return completed
+
+    def is_done(self, output_filepath):
+        out_path = str(output_filepath)
+        if out_path not in self.completed_outputs:
             return False
-
-        completed = self.state.get("completed_metrics", {})
-        if metric_name not in completed:
+        current_hash = self._compute_file_hash(out_path)
+        if current_hash is None:
             return False
-
-        out_path = Path(output_filepath)
-        if not out_path.exists():
-            return False
-
-        if completed[metric_name] != self._compute_file_hash([output_filepath]):
+        if self.completed_outputs[out_path] != current_hash:
             return False
         return True
 
-    def mark_done(self, metric_name, output_filepath):
-        if self.state.get("input_hash") != self.input_hash:
-            self.state = {"input_hash": self.input_hash, "completed_metrics": {}}
+    def mark_done(self, output_filepath):
+        out_path = str(output_filepath)
+        h = self._compute_file_hash(out_path)
+        if h is None:
+            return
 
-        self.state["completed_metrics"][metric_name] = self._compute_file_hash(
-            [output_filepath]
-        )
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=4)
+        self.completed_outputs[out_path] = h
+        self._write_state_atomically()
+
+    def _write_state_atomically(self):
+        tmp_file = self.done_file.with_suffix(".tmp")
+        try:
+            with open(tmp_file, "w") as f:
+                for filepath, h in self.current_input_hashes.items():
+                    f.write(f"{h}  {filepath}\n")
+                for filepath, h in self.completed_outputs.items():
+                    f.write(f"{h}  {filepath}\n")
+            tmp_file.replace(self.done_file)
+        except Exception as e:
+            logging.warning(f"Failed to atomically write state tracking file: {e}")
+            if tmp_file.exists():
+                tmp_file.unlink()
 
 
 # ==========================================
@@ -186,7 +217,7 @@ def cleanup_extra_files(output_dir, expected_filenames):
             fname = file_path.name
             if fname in expected_filenames:
                 continue
-            if fname.endswith(".log") or fname in ("done", ".computation_state.json"):
+            if fname.endswith(".log") or fname == "done":
                 continue
             try:
                 file_path.unlink()
@@ -412,12 +443,14 @@ def compute_cluster_stats(network_file, community_file, outdir):
         {"node.idx", "com.idx", "outliers.idx"}
     )
 
-    all_done = all(tracker.is_done(k, output_dir / f"{k}.txt") for k in EXPECTED_STATS)
+    all_done = all(
+        tracker.is_done(str(output_dir / f"{k}.txt")) for k in EXPECTED_STATS
+    )
     if (
         all_done
-        and tracker.is_done("node.idx", output_dir / "node.idx")
-        and tracker.is_done("com.idx", output_dir / "com.idx")
-        and tracker.is_done("outliers.idx", output_dir / "outliers.idx")
+        and tracker.is_done(str(output_dir / "node.idx"))
+        and tracker.is_done(str(output_dir / "com.idx"))
+        and tracker.is_done(str(output_dir / "outliers.idx"))
     ):
         logging.info("All expected cluster stats already computed. Exiting early.")
         cleanup_extra_files(output_dir, expected_files)
@@ -447,23 +480,26 @@ def compute_cluster_stats(network_file, community_file, outdir):
     )
     outliers.update(net_outliers)
 
-    if not tracker.is_done("node.idx", output_dir / "node.idx"):
+    idx_node = str(output_dir / "node.idx")
+    if not tracker.is_done(idx_node):
         pd.Series([node_iid2id[iid] for iid in range(node_iid_count)]).to_csv(
-            output_dir / "node.idx", index=False, header=False
+            idx_node, index=False, header=False
         )
-        tracker.mark_done("node.idx", output_dir / "node.idx")
+        tracker.mark_done(idx_node)
 
-    if not tracker.is_done("com.idx", output_dir / "com.idx"):
+    idx_com = str(output_dir / "com.idx")
+    if not tracker.is_done(idx_com):
         pd.Series([com_iid2id[iid] for iid in range(com_iid_count)]).to_csv(
-            output_dir / "com.idx", index=False, header=False
+            idx_com, index=False, header=False
         )
-        tracker.mark_done("com.idx", output_dir / "com.idx")
+        tracker.mark_done(idx_com)
 
-    if not tracker.is_done("outliers.idx", output_dir / "outliers.idx"):
+    idx_outliers = str(output_dir / "outliers.idx")
+    if not tracker.is_done(idx_outliers):
         pd.Series([node_iid2id[iid] for iid in sorted(outliers)]).to_csv(
-            output_dir / "outliers.idx", index=False, header=False
+            idx_outliers, index=False, header=False
         )
-        tracker.mark_done("outliers.idx", output_dir / "outliers.idx")
+        tracker.mark_done(idx_outliers)
 
     logging.info("Computing global stats...")
     global_stats = {}
@@ -472,28 +508,28 @@ def compute_cluster_stats(network_file, community_file, outdir):
 
     global_stats["global_n"] = (
         global_n
-        if not tracker.is_done("global_n", output_dir / "global_n.txt")
+        if not tracker.is_done(str(output_dir / "global_n.txt"))
         else load_cached_list(output_dir / "global_n.txt")[0]
     )
     global_stats["global_m"] = (
         global_m
-        if not tracker.is_done("global_m", output_dir / "global_m.txt")
+        if not tracker.is_done(str(output_dir / "global_m.txt"))
         else load_cached_list(output_dir / "global_m.txt")[0]
     )
     global_stats["node_coverage"] = (
         compute_node_coverage(outliers, global_n)
-        if not tracker.is_done("node_coverage", output_dir / "node_coverage.txt")
+        if not tracker.is_done(str(output_dir / "node_coverage.txt"))
         else load_cached_list(output_dir / "node_coverage.txt")[0]
     )
     global_stats["n_outliers"] = (
         compute_n_outliers(outliers)
-        if not tracker.is_done("n_outliers", output_dir / "n_outliers.txt")
+        if not tracker.is_done(str(output_dir / "n_outliers.txt"))
         else load_cached_list(output_dir / "n_outliers.txt")[0]
     )
 
     logging.info("Computing node-level mixing parameters...")
     node_stats = {"mixing_parameter": []}
-    if not tracker.is_done("mixing_parameter", output_dir / "mixing_parameter.txt"):
+    if not tracker.is_done(str(output_dir / "mixing_parameter.txt")):
         for node_iid in range(node_iid_count):
             node_stats["mixing_parameter"].append(
                 compute_mixing_parameter(node_iid, neighbors, node2coms, outliers)
@@ -515,7 +551,8 @@ def compute_cluster_stats(network_file, community_file, outdir):
         "modularity": [],
     }
     compute_flags = {
-        k: not tracker.is_done(k, output_dir / f"{k}.txt") for k in cluster_stats.keys()
+        k: not tracker.is_done(str(output_dir / f"{k}.txt"))
+        for k in cluster_stats.keys()
     }
 
     for k, needs_compute in compute_flags.items():
@@ -582,33 +619,30 @@ def compute_cluster_stats(network_file, community_file, outdir):
 
     global_stats["n_clusters"] = (
         compute_n_clusters(com_iid_count)
-        if not tracker.is_done("n_clusters", output_dir / "n_clusters.txt")
+        if not tracker.is_done(str(output_dir / "n_clusters.txt"))
         else load_cached_list(output_dir / "n_clusters.txt")[0]
     )
     global_stats["n_disconnected_clusters"] = (
         compute_n_disconnected_clusters(cluster_stats)
-        if not tracker.is_done(
-            "n_disconnected_clusters", output_dir / "n_disconnected_clusters.txt"
-        )
+        if not tracker.is_done(str(output_dir / "n_disconnected_clusters.txt"))
         else load_cached_list(output_dir / "n_disconnected_clusters.txt")[0]
     )
     global_stats["n_connected_clusters"] = (
         compute_n_connected_clusters(cluster_stats)
-        if not tracker.is_done(
-            "n_connected_clusters", output_dir / "n_connected_clusters.txt"
-        )
+        if not tracker.is_done(str(output_dir / "n_connected_clusters.txt"))
         else load_cached_list(output_dir / "n_connected_clusters.txt")[0]
     )
 
     all_stats = {**global_stats, **node_stats, **cluster_stats}
 
     for key in EXPECTED_STATS:
-        if key in all_stats and not tracker.is_done(key, output_dir / f"{key}.txt"):
+        stat_file = str(output_dir / f"{key}.txt")
+        if key in all_stats and not tracker.is_done(stat_file):
             value = all_stats[key]
             pd.Series(value if isinstance(value, list) else [value]).to_csv(
-                output_dir / f"{key}.txt", index=False, header=False
+                stat_file, index=False, header=False
             )
-            tracker.mark_done(key, output_dir / f"{key}.txt")
+            tracker.mark_done(stat_file)
 
     cleanup_extra_files(output_dir, expected_files)
     logging.info("Cluster stats computation complete.")

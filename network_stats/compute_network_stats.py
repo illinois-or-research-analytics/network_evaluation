@@ -5,7 +5,6 @@ import time
 import sys
 import hashlib
 import os
-import json
 
 import numpy as np
 import pandas as pd
@@ -17,60 +16,92 @@ from scipy.sparse import linalg as la
 # State Tracking
 # ==========================================
 class StateTracker:
-    """Tracks computation state by enforcing cryptographic integrity on both inputs and outputs."""
+    """Tracks computation state by maintaining a sha256sum compatible 'done' file via atomic writes."""
 
     def __init__(self, output_dir, input_files):
         self.output_dir = Path(output_dir)
-        self.state_file = self.output_dir / ".computation_state.json"
-        self.input_hash = self._compute_file_hash(input_files)
-        self.state = self._load_state()
+        self.done_file = self.output_dir / "done"
+        self.input_files = [str(f) for f in input_files if f and os.path.exists(f)]
+        self.current_input_hashes = {
+            f: self._compute_file_hash(f) for f in self.input_files
+        }
+        self.completed_outputs = self._load_state()
 
-    def _compute_file_hash(self, files):
+    def _compute_file_hash(self, filepath):
+        if not os.path.exists(filepath):
+            return None
         hasher = hashlib.sha256()
-        file_list = files if isinstance(files, list) else [files]
-        for f in sorted(file_list):
-            if f and os.path.exists(f):
-                with open(f, "rb") as file_obj:
-                    for chunk in iter(lambda: file_obj.read(65536), b""):
-                        hasher.update(chunk)
-        return hasher.hexdigest()
+        try:
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except OSError:
+            return None
 
     def _load_state(self):
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, "r") as f:
-                    data = json.load(f)
-                    if data.get("input_hash") == self.input_hash:
-                        return data
-            except json.JSONDecodeError:
-                pass
-        return {"input_hash": self.input_hash, "completed_metrics": {}}
+        completed = {}
+        if not self.done_file.exists():
+            return completed
 
-    def is_done(self, metric_name, output_filepath):
-        if self.state.get("input_hash") != self.input_hash:
+        recorded_hashes = {}
+        try:
+            with open(self.done_file, "r") as f:
+                for line in f:
+                    parts = line.strip().split("  ", 1)
+                    if len(parts) == 2:
+                        recorded_hashes[parts[1]] = parts[0]
+        except Exception:
+            pass
+
+        inputs_match = True
+        for f, h in self.current_input_hashes.items():
+            if recorded_hashes.get(f) != h:
+                inputs_match = False
+                break
+
+        if not inputs_match:
+            return completed
+
+        for filepath, h in recorded_hashes.items():
+            if filepath not in self.current_input_hashes:
+                completed[filepath] = h
+
+        return completed
+
+    def is_done(self, output_filepath):
+        out_path = str(output_filepath)
+        if out_path not in self.completed_outputs:
             return False
-
-        completed = self.state.get("completed_metrics", {})
-        if metric_name not in completed:
+        current_hash = self._compute_file_hash(out_path)
+        if current_hash is None:
             return False
-
-        out_path = Path(output_filepath)
-        if not out_path.exists():
-            return False
-
-        if completed[metric_name] != self._compute_file_hash([output_filepath]):
+        if self.completed_outputs[out_path] != current_hash:
             return False
         return True
 
-    def mark_done(self, metric_name, output_filepath):
-        if self.state.get("input_hash") != self.input_hash:
-            self.state = {"input_hash": self.input_hash, "completed_metrics": {}}
+    def mark_done(self, output_filepath):
+        out_path = str(output_filepath)
+        h = self._compute_file_hash(out_path)
+        if h is None:
+            return
 
-        self.state["completed_metrics"][metric_name] = self._compute_file_hash(
-            [output_filepath]
-        )
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=4)
+        self.completed_outputs[out_path] = h
+        self._write_state_atomically()
+
+    def _write_state_atomically(self):
+        tmp_file = self.done_file.with_suffix(".tmp")
+        try:
+            with open(tmp_file, "w") as f:
+                for filepath, h in self.current_input_hashes.items():
+                    f.write(f"{h}  {filepath}\n")
+                for filepath, h in self.completed_outputs.items():
+                    f.write(f"{h}  {filepath}\n")
+            tmp_file.replace(self.done_file)
+        except Exception as e:
+            logging.warning(f"Failed to atomically write state tracking file: {e}")
+            if tmp_file.exists():
+                tmp_file.unlink()
 
 
 # ==========================================
@@ -167,7 +198,7 @@ def cleanup_extra_files(output_dir, expected_filenames):
             fname = file_path.name
             if fname in expected_filenames:
                 continue
-            if fname.endswith(".log") or fname in ("done", ".computation_state.json"):
+            if fname.endswith(".log") or fname == "done":
                 continue
             try:
                 file_path.unlink()
@@ -176,7 +207,7 @@ def cleanup_extra_files(output_dir, expected_filenames):
 
 
 # ==========================================
-# Caching Helpers
+# Caching Helpers (Graph-Tool)
 # ==========================================
 def get_out_degrees(G, cache):
     if "out_degrees" not in cache:
@@ -339,17 +370,15 @@ def compute_stats(input_network, output_dir):
 
     all_done = True
     for stat_name in EXPECTED_SCALARS:
-        if not tracker.is_done(stat_name, output_dir / f"{stat_name}.txt"):
+        if not tracker.is_done(str(output_dir / f"{stat_name}.txt")):
             all_done = False
             break
     for stat_name in EXPECTED_DISTR:
-        if not tracker.is_done(stat_name, output_dir / f"{stat_name}.txt"):
+        if not tracker.is_done(str(output_dir / f"{stat_name}.txt")):
             all_done = False
             break
 
-    if all_done and tracker.is_done(
-        "node.idx", output_dir / NODE_ORDERING_IDX_FILENAME
-    ):
+    if all_done and tracker.is_done(str(output_dir / NODE_ORDERING_IDX_FILENAME)):
         logging.info("All expected stats already computed. Exiting early.")
         cleanup_extra_files(output_dir, expected_files)
         return
@@ -366,34 +395,35 @@ def compute_stats(input_network, output_dir):
     gt.remove_self_loops(G)
     logging.info(f"Graph built in {time.perf_counter() - start_time:.3f}s")
 
-    if not tracker.is_done("node.idx", output_dir / NODE_ORDERING_IDX_FILENAME):
+    idx_file = str(output_dir / NODE_ORDERING_IDX_FILENAME)
+    if not tracker.is_done(idx_file):
         start_time = time.perf_counter()
         pd.Series([v_name[v] for v in G.vertices()]).to_csv(
-            output_dir / NODE_ORDERING_IDX_FILENAME, index=False, header=False
+            idx_file, index=False, header=False
         )
-        tracker.mark_done("node.idx", output_dir / NODE_ORDERING_IDX_FILENAME)
+        tracker.mark_done(idx_file)
         logging.info(f"node.idx saved in {time.perf_counter() - start_time:.3f}s")
 
     for stat_name in EXPECTED_SCALARS:
-        stat_file = output_dir / f"{stat_name}.txt"
-        if tracker.is_done(stat_name, stat_file):
+        stat_file = str(output_dir / f"{stat_name}.txt")
+        if tracker.is_done(stat_file):
             continue
         logging.info(f"Computing {stat_name}...")
         start = time.perf_counter()
         val = SCALAR_DISPATCH[stat_name](G, computation_cache)
         pd.Series([val]).to_csv(stat_file, index=False, header=False)
-        tracker.mark_done(stat_name, stat_file)
+        tracker.mark_done(stat_file)
         logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
 
     for stat_name in EXPECTED_DISTR:
-        distr_file = output_dir / f"{stat_name}.txt"
-        if tracker.is_done(stat_name, distr_file):
+        distr_file = str(output_dir / f"{stat_name}.txt")
+        if tracker.is_done(distr_file):
             continue
         logging.info(f"Computing {stat_name}...")
         start = time.perf_counter()
         data = DISTR_DISPATCH[stat_name](G, computation_cache)
         pd.DataFrame(data).to_csv(distr_file, sep="\t", header=False, index=False)
-        tracker.mark_done(stat_name, distr_file)
+        tracker.mark_done(distr_file)
         logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
 
     logging.info(f"Total time taken: {time.perf_counter() - job_start_time:.3f}s")
