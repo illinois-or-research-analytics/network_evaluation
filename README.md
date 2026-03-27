@@ -61,6 +61,5 @@ The output contains multiple TXT files, each corresponding to a different statis
 |n_clusters| number of clusters|
 |n_disconnected_clusters| number of disconnected clusters (with mincut = 0)|
 |n_connected_clusters| number of connected clusters (with mincut > 0)|
-|n_wellconnected_clusters| number of well-connected clusters (with mincut > log10(n))|
 
 Additionally, there are `node.idx` and `com.idx` file that contain the original node and cluster ids. Each line in these files corresponds to the same line in the other output files. There is also a `outliers.txt` file that contains the node ids of the outliers.

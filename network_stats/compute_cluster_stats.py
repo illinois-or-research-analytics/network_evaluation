@@ -166,15 +166,6 @@ def compute_n_connected_clusters(cluster_stats):
     )
 
 
-def compute_n_wellconnected_clusters(cluster_stats):
-    """Compute the number of well-connected clusters (cluster with n > 1 and mincut > log10(n))."""
-    return sum(
-        1
-        for n, min_cut in zip(cluster_stats["n"], cluster_stats["mincut"])
-        if n > 1 and min_cut > np.log10(n)
-    )
-
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Compute cluster stats from network and community files."
@@ -463,9 +454,6 @@ for com_iid in range(com_iid_count):
 global_stats["n_clusters"] = compute_n_clusters(com_iid_count)
 global_stats["n_disconnected_clusters"] = compute_n_disconnected_clusters(cluster_stats)
 global_stats["n_connected_clusters"] = compute_n_connected_clusters(cluster_stats)
-global_stats["n_wellconnected_clusters"] = compute_n_wellconnected_clusters(
-    cluster_stats
-)
 
 # Export all stats to files
 all_stats = {**global_stats, **node_stats, **cluster_stats}
