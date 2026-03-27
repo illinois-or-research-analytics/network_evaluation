@@ -1,5 +1,4 @@
 import os
-import json
 import argparse
 from pathlib import Path
 from typing import List, Any
@@ -18,7 +17,6 @@ CLUSTER_SCALAR_STATS = [
     "n_clusters",
     "n_disconnected_clusters",
     "n_connected_clusters",
-    "n_wellconnected_clusters",
 ]
 
 CLUSTER_NODE_DISTR_STATS = ["mixing_parameter"]
@@ -56,7 +54,6 @@ NETWORK_NODE_DISTR_STATS = [
     "degree",
     "local_ccoeff_nodes",
     "pagerank",
-    "betweenness",
     "kcore",
 ]
 NETWORK_GENERAL_DISTR_STATS = ["concomp_sizes"]
@@ -129,13 +126,11 @@ def load_network_scalars(folder) -> dict:
     res = {}
     if not folder or not os.path.isdir(folder):
         return res
-    path = os.path.join(folder, "stats.json")
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            data = json.load(f)
-        for name in NETWORK_SCALAR_STATS:
-            if name in data:
-                res[name] = data[name]
+    for name in NETWORK_SCALAR_STATS:
+        path = os.path.join(folder, f"{name}.txt")
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                res[name] = float(f.read().strip())
     return res
 
 
@@ -161,7 +156,7 @@ def load_network_distributions(folder) -> dict:
     if not folder or not os.path.isdir(folder):
         return res
     for name in NETWORK_NODE_DISTR_STATS + NETWORK_GENERAL_DISTR_STATS:
-        path = os.path.join(folder, f"{name}.distribution")
+        path = os.path.join(folder, f"{name}.txt")
         if os.path.exists(path):
             df = pd.read_csv(path, sep="\t", header=None)
             res[name] = df[0].values
@@ -216,7 +211,7 @@ def load_network_sequences(folder) -> dict:
 
     # Strictly iterate ONLY over distributions known to map to nodes
     for name in NETWORK_NODE_DISTR_STATS:
-        dist_path = os.path.join(folder, f"{name}.distribution")
+        dist_path = os.path.join(folder, f"{name}.txt")
         if os.path.exists(dist_path):
             df_vals = pd.read_csv(dist_path, sep="\t", header=None, names=["val"])
             if len(node_ids) == len(df_vals):

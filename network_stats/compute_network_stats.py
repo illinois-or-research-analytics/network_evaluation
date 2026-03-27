@@ -1,16 +1,81 @@
-import json
 import argparse
 from pathlib import Path
 import logging
 import time
 import sys
+import hashlib
+import os
+import json
 
 import numpy as np
 import pandas as pd
 import graph_tool.all as gt
 from scipy.sparse import linalg as la
 
-STATS_JSON_FILENAME = "stats.json"
+
+# ==========================================
+# State Tracking
+# ==========================================
+class StateTracker:
+    """Tracks computation state by enforcing cryptographic integrity on both inputs and outputs."""
+
+    def __init__(self, output_dir, input_files):
+        self.output_dir = Path(output_dir)
+        self.state_file = self.output_dir / ".computation_state.json"
+        self.input_hash = self._compute_file_hash(input_files)
+        self.state = self._load_state()
+
+    def _compute_file_hash(self, files):
+        hasher = hashlib.sha256()
+        file_list = files if isinstance(files, list) else [files]
+        for f in sorted(file_list):
+            if f and os.path.exists(f):
+                with open(f, "rb") as file_obj:
+                    for chunk in iter(lambda: file_obj.read(65536), b""):
+                        hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def _load_state(self):
+        if self.state_file.exists():
+            try:
+                with open(self.state_file, "r") as f:
+                    data = json.load(f)
+                    if data.get("input_hash") == self.input_hash:
+                        return data
+            except json.JSONDecodeError:
+                pass
+        return {"input_hash": self.input_hash, "completed_metrics": {}}
+
+    def is_done(self, metric_name, output_filepath):
+        if self.state.get("input_hash") != self.input_hash:
+            return False
+
+        completed = self.state.get("completed_metrics", {})
+        if metric_name not in completed:
+            return False
+
+        out_path = Path(output_filepath)
+        if not out_path.exists():
+            return False
+
+        if completed[metric_name] != self._compute_file_hash([output_filepath]):
+            return False
+        return True
+
+    def mark_done(self, metric_name, output_filepath):
+        if self.state.get("input_hash") != self.input_hash:
+            self.state = {"input_hash": self.input_hash, "completed_metrics": {}}
+
+        self.state["completed_metrics"][metric_name] = self._compute_file_hash(
+            [output_filepath]
+        )
+        with open(self.state_file, "w") as f:
+            json.dump(self.state, f, indent=4)
+
+
+# ==========================================
+# Constants & Configuration
+# ==========================================
 NODE_ORDERING_IDX_FILENAME = "node.idx"
 
 NODE_COLUMN_NAMES = [
@@ -28,7 +93,7 @@ NODE_COLUMN_NAMES = [
     "node2",
 ]
 
-SCALAR_STATS = {
+EXPECTED_SCALARS = [
     "n_nodes",
     "n_edges",
     "n_concomp",
@@ -38,24 +103,28 @@ SCALAR_STATS = {
     "global_ccoeff",
     "local_ccoeff",
     "pseudo_diameter",
-    # "l_eigval_A",
-    # "l_eigval_H",
     "char_time",
     "node_percolation_targeted",
     "node_percolation_random",
     "frac_giant_ccomp",
-}
+]
 
-DISTR_STATS = {
-    "concomp_sizes",
-    "degree",
-    "local_ccoeff_nodes",
-    "pagerank",
-    "kcore",
-    # "betweenness",
-}
+EXPECTED_DISTR = ["concomp_sizes", "degree", "local_ccoeff_nodes", "pagerank", "kcore"]
 
-# --- IO Helpers ---
+
+# ==========================================
+# I/O and Logging Helpers
+# ==========================================
+def prepare_logging(output_dir):
+    logging.basicConfig(
+        filename=Path(output_dir) / "run.log",
+        filemode="a",
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+    logger = logging.getLogger()
+    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+        logger.addHandler(logging.StreamHandler(sys.stdout))
 
 
 def detect_delimiter(file_path):
@@ -74,31 +143,41 @@ def detect_delimiter(file_path):
     return ","
 
 
-def check_if_header_exists(filepath, delimiter):
-    with open(filepath, "r") as f:
-        for line in f:
-            if line.strip().startswith("#") or not line.strip():
-                continue
-            parts = line.strip().split(delimiter)
-            if len(parts) >= 2 and parts[0].lower() in NODE_COLUMN_NAMES:
-                return True
-            return False
-    return False
-
-
-def prepare_logging(output_dir):
-    logging.basicConfig(
-        filename=output_dir / "run.log",
-        filemode="w",
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+def load_edgelist_df(filepath):
+    delimiter = detect_delimiter(filepath)
+    df = pd.read_csv(
+        filepath, sep=delimiter, header=None, comment="#", dtype=str, na_filter=False
     )
-    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    if not df.empty and len(df.columns) >= 2:
+        val0, val1 = (
+            str(df.iloc[0, 0]).strip().lower(),
+            str(df.iloc[0, 1]).strip().lower(),
+        )
+        if val0 in NODE_COLUMN_NAMES and val1 in NODE_COLUMN_NAMES:
+            df = df.iloc[1:].reset_index(drop=True)
+    return df
 
 
-# --- Caching Helpers ---
+def cleanup_extra_files(output_dir, expected_filenames):
+    out_path = Path(output_dir)
+    if not out_path.exists():
+        return
+    for file_path in out_path.iterdir():
+        if file_path.is_file():
+            fname = file_path.name
+            if fname in expected_filenames:
+                continue
+            if fname.endswith(".log") or fname in ("done", ".computation_state.json"):
+                continue
+            try:
+                file_path.unlink()
+            except Exception as e:
+                logging.warning(f"Failed to remove extra file {fname}: {e}")
 
 
+# ==========================================
+# Caching Helpers
+# ==========================================
 def get_out_degrees(G, cache):
     if "out_degrees" not in cache:
         cache["out_degrees"] = G.get_out_degrees(G.get_vertices())
@@ -107,8 +186,7 @@ def get_out_degrees(G, cache):
 
 def get_components(G, cache):
     if "components" not in cache:
-        _, hist = gt.label_components(G)
-        cache["components"] = hist
+        _, cache["components"] = gt.label_components(G)
     return cache["components"]
 
 
@@ -130,9 +208,9 @@ def get_kcore(G, cache):
     return cache["kcore"]
 
 
-# --- Metric Functions ---
-
-
+# ==========================================
+# Metric Computations
+# ==========================================
 def compute_n_nodes(G, cache):
     return int(G.num_vertices())
 
@@ -169,22 +247,10 @@ def compute_pseudo_diameter(G, cache):
     return float(gt.pseudo_diameter(G)[0])
 
 
-def compute_l_eigval_A(G, cache):
-    return float(gt.eigenvector(G)[0])
-
-
-def compute_l_eigval_H(G, cache):
-    H_mtx = gt.hashimoto(G)
-    eigvals_H = la.eigs(H_mtx, k=1, return_eigenvectors=False, which="LR")
-    return float(eigvals_H[0].real)
-
-
 def compute_char_time(G, cache):
-    largest_cc_view = gt.extract_largest_component(G, prune=True)
-    T = gt.transition(largest_cc_view)
+    T = gt.transition(gt.extract_largest_component(G, prune=True))
     eigvals_T = la.eigs(T, k=2, return_eigenvectors=False, which="LR")
-    sorted_eigvals = np.sort(eigvals_T.real)
-    return float(-1 / np.log(sorted_eigvals[-2]))
+    return float(-1 / np.log(np.sort(eigvals_T.real)[-2]))
 
 
 def compute_percolation_targeted(G, cache):
@@ -226,15 +292,9 @@ def compute_pagerank_dist(G, cache):
     return gt.pagerank(G).a
 
 
-def compute_betweenness_dist(G, cache):
-    return gt.betweenness(G)[0].a
-
-
 def compute_kcore_dist(G, cache):
     return get_kcore(G, cache)
 
-
-# --- Dispatchers ---
 
 SCALAR_DISPATCH = {
     "n_nodes": compute_n_nodes,
@@ -246,8 +306,6 @@ SCALAR_DISPATCH = {
     "global_ccoeff": compute_global_ccoeff,
     "local_ccoeff": compute_local_ccoeff_mean,
     "pseudo_diameter": compute_pseudo_diameter,
-    "l_eigval_A": compute_l_eigval_A,
-    "l_eigval_H": compute_l_eigval_H,
     "char_time": compute_char_time,
     "node_percolation_targeted": compute_percolation_targeted,
     "node_percolation_random": compute_percolation_random,
@@ -259,83 +317,96 @@ DISTR_DISPATCH = {
     "concomp_sizes": compute_concomp_sizes,
     "local_ccoeff_nodes": compute_local_ccoeff_dist,
     "pagerank": compute_pagerank_dist,
-    "betweenness": compute_betweenness_dist,
     "kcore": compute_kcore_dist,
 }
 
-# --- Main Pipeline ---
 
-
+# ==========================================
+# Main Execution
+# ==========================================
 def compute_stats(input_network, output_dir):
     job_start_time = time.perf_counter()
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     prepare_logging(output_dir)
 
-    stats_to_compute = SCALAR_STATS | DISTR_STATS
-    scalar_stats = {}
-    distr_stats = {}
+    tracker = StateTracker(output_dir, [input_network])
+
+    expected_files = {f"{m}.txt" for m in EXPECTED_SCALARS}.union(
+        {f"{m}.txt" for m in EXPECTED_DISTR}
+    )
+    expected_files.add(NODE_ORDERING_IDX_FILENAME)
+
+    all_done = True
+    for stat_name in EXPECTED_SCALARS:
+        if not tracker.is_done(stat_name, output_dir / f"{stat_name}.txt"):
+            all_done = False
+            break
+    for stat_name in EXPECTED_DISTR:
+        if not tracker.is_done(stat_name, output_dir / f"{stat_name}.txt"):
+            all_done = False
+            break
+
+    if all_done and tracker.is_done(
+        "node.idx", output_dir / NODE_ORDERING_IDX_FILENAME
+    ):
+        logging.info("All expected stats already computed. Exiting early.")
+        cleanup_extra_files(output_dir, expected_files)
+        return
+
     computation_cache = {}
-
-    delimiter = detect_delimiter(input_network)
-    has_header = check_if_header_exists(input_network, delimiter)
-    header_arg = 0 if has_header else None
-
     logging.info("Building graph via hashed edge list...")
     start_time = time.perf_counter()
 
-    df = pd.read_csv(
-        input_network, sep=delimiter, header=header_arg, comment="#", dtype=str
-    )
-    edge_list = df.iloc[:, [0, 1]].values.astype(str)
-
+    df = load_edgelist_df(input_network)
     G = gt.Graph(directed=False)
-    v_name = G.add_edge_list(edge_list, hashed=True)
+    v_name = G.add_edge_list(df.iloc[:, [0, 1]].values.astype(str), hashed=True)
     G.vertex_properties["name"] = v_name
-
     gt.remove_parallel_edges(G)
     gt.remove_self_loops(G)
     logging.info(f"Graph built in {time.perf_counter() - start_time:.3f}s")
 
-    logging.info("Saving canonical node ordering (node.idx)...")
-    start_time = time.perf_counter()
-    node_names_ordered = [v_name[v] for v in G.vertices()]
-    with open(output_dir / NODE_ORDERING_IDX_FILENAME, "w") as idx_f:
-        pd.Series(node_names_ordered).to_csv(idx_f, index=False, header=False)
-    logging.info(f"node.idx saved in {time.perf_counter() - start_time:.3f}s")
+    if not tracker.is_done("node.idx", output_dir / NODE_ORDERING_IDX_FILENAME):
+        start_time = time.perf_counter()
+        pd.Series([v_name[v] for v in G.vertices()]).to_csv(
+            output_dir / NODE_ORDERING_IDX_FILENAME, index=False, header=False
+        )
+        tracker.mark_done("node.idx", output_dir / NODE_ORDERING_IDX_FILENAME)
+        logging.info(f"node.idx saved in {time.perf_counter() - start_time:.3f}s")
 
-    for stat_name, compute_fn in SCALAR_DISPATCH.items():
-        if stat_name in stats_to_compute:
-            logging.info(f"Computing {stat_name}...")
-            start = time.perf_counter()
-            scalar_stats[stat_name] = compute_fn(G, computation_cache)
-            logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
+    for stat_name in EXPECTED_SCALARS:
+        stat_file = output_dir / f"{stat_name}.txt"
+        if tracker.is_done(stat_name, stat_file):
+            continue
+        logging.info(f"Computing {stat_name}...")
+        start = time.perf_counter()
+        val = SCALAR_DISPATCH[stat_name](G, computation_cache)
+        pd.Series([val]).to_csv(stat_file, index=False, header=False)
+        tracker.mark_done(stat_name, stat_file)
+        logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
 
-    for stat_name, compute_fn in DISTR_DISPATCH.items():
-        if stat_name in stats_to_compute:
-            logging.info(f"Computing {stat_name}...")
-            start = time.perf_counter()
-            distr_stats[stat_name] = compute_fn(G, computation_cache)
-            logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
-
-    if scalar_stats:
-        stats_file = output_dir / STATS_JSON_FILENAME
-        with stats_file.open("w") as f:
-            json.dump(scalar_stats, f, indent=4)
-
-    if distr_stats:
-        for stat_name, data in distr_stats.items():
-            distr_file = output_dir / f"{stat_name}.distribution"
-            with open(distr_file, "w") as f:
-                pd.DataFrame(data).to_csv(f, sep="\t", header=False, index=False)
+    for stat_name in EXPECTED_DISTR:
+        distr_file = output_dir / f"{stat_name}.txt"
+        if tracker.is_done(stat_name, distr_file):
+            continue
+        logging.info(f"Computing {stat_name}...")
+        start = time.perf_counter()
+        data = DISTR_DISPATCH[stat_name](G, computation_cache)
+        pd.DataFrame(data).to_csv(distr_file, sep="\t", header=False, index=False)
+        tracker.mark_done(stat_name, distr_file)
+        logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
 
     logging.info(f"Total time taken: {time.perf_counter() - job_start_time:.3f}s")
+    cleanup_extra_files(output_dir, expected_files)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compute statistics for a network.")
-    parser.add_argument("--network", required=True, type=str, help="Input network file")
-    parser.add_argument("--outdir", required=True, type=str, help="Output directory")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--network", required=True, type=str, help="Path to edge list CSV"
+    )
+    parser.add_argument(
+        "--outdir", required=True, type=str, help="Path to output directory"
+    )
     args = parser.parse_args()
-
     compute_stats(args.network, args.outdir)
