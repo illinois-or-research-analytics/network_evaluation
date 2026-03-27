@@ -202,10 +202,34 @@ def get_common_networks_df(
         (df_wide["network_id"].isin(network_list)) & (df_wide["Method"].isin(methods))
     ].copy()
 
+    # Drop rows where the metric value is NaN
     df_metric = df_filtered[["network_id", "Method", metric_col]].dropna()
 
+    # Count how many valid methods exist for each network
     method_counts = df_metric.groupby("network_id", observed=True)["Method"].nunique()
     valid_networks = method_counts[method_counts == len(methods)].index
+
+    # Print detailed reasons for filtered networks
+    filtered_out_networks = set(network_list) - set(valid_networks)
+    if filtered_out_networks:
+        logger.info(
+            f"[{metric_col}] Filtered out {len(filtered_out_networks)} network(s): {sorted(list(filtered_out_networks))}"
+        )
+
+        # for net in sorted(list(filtered_out_networks)):
+        #     # Find which methods actually have valid data for this network
+        #     present_methods = df_metric[df_metric["network_id"] == net][
+        #         "Method"
+        #     ].unique()
+        #     missing_methods = set(methods) - set(present_methods)
+
+        #     logger.info(
+        #         f"  -> '{net}' is missing valid data for: {sorted(list(missing_methods))}"
+        #     )
+    else:
+        logger.info(
+            f"[{metric_col}] All {len(network_list)} networks retained (no filtering required)."
+        )
 
     df_clean = df_metric[df_metric["network_id"].isin(valid_networks)].copy()
 
@@ -332,7 +356,7 @@ def plot_boxplots(
                 hue="Method",
                 ax=ax,
                 hue_order=methods,
-                showmeans=True,
+                showmeans=False,
                 showfliers=not hide_fliers,
                 orient="v",
                 boxprops={"edgecolor": "black", "linewidth": 1.5},
@@ -480,6 +504,20 @@ if __name__ == "__main__":
             df_wide = pd.merge(
                 df_wide, slice_df, on=["network_id", "Method"], how="outer"
             )
+
+    active_methods = df_wide.dropna(subset=metric_cols, how="all")["Method"].unique()
+    valid_names = [m for m in args.names if m in active_methods]
+
+    if len(valid_names) < len(args.names):
+        dropped = set(args.names) - set(valid_names)
+        logger.warning(f"Dropping methods with no completed networks: {dropped}")
+        args.names = (
+            valid_names  # Update global list to adjust strict intersection target
+        )
+
+    if not args.names:
+        logger.error("No methods have completed networks. Exiting.")
+        sys.exit(0)
 
     df_wide["Method"] = pd.Categorical(
         df_wide["Method"], categories=args.names, ordered=True
