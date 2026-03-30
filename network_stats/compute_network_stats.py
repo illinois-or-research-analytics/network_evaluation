@@ -411,7 +411,7 @@ def compute_stats(input_network, output_dir):
         logging.info(f"Computing {stat_name}...")
         start = time.perf_counter()
         val = SCALAR_DISPATCH[stat_name](G, computation_cache)
-        pd.Series([val]).to_csv(stat_file, index=False, header=False)
+        pd.Series([val]).to_csv(stat_file, index=False, header=False, na_rep="NaN")
         tracker.mark_done(stat_file)
         logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
 
@@ -422,7 +422,9 @@ def compute_stats(input_network, output_dir):
         logging.info(f"Computing {stat_name}...")
         start = time.perf_counter()
         data = DISTR_DISPATCH[stat_name](G, computation_cache)
-        pd.DataFrame(data).to_csv(distr_file, sep="\t", header=False, index=False)
+        pd.DataFrame(data).to_csv(
+            distr_file, sep="\t", header=False, index=False, na_rep="NaN"
+        )
         tracker.mark_done(distr_file)
         logging.info(f"{stat_name} completed in {time.perf_counter() - start:.3f}s")
 

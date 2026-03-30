@@ -130,7 +130,10 @@ def load_network_scalars(folder) -> dict:
         path = os.path.join(folder, f"{name}.txt")
         if os.path.exists(path):
             with open(path, "r") as f:
-                res[name] = float(f.read().strip())
+                try:
+                    res[name] = float(f.read().strip())
+                except Exception as e:
+                    print(f"[WARNING] Failed to parse scalar '{name}' in {folder}: {e}")
     return res
 
 
