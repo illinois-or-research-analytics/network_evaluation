@@ -640,7 +640,7 @@ def compute_cluster_stats(network_file, community_file, outdir):
         if key in all_stats and not tracker.is_done(stat_file):
             value = all_stats[key]
             pd.Series(value if isinstance(value, list) else [value]).to_csv(
-                stat_file, index=False, header=False
+                stat_file, index=False, header=False, na_rep="NaN"
             )
             tracker.mark_done(stat_file)
 
