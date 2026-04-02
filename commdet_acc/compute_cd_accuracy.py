@@ -1,3 +1,4 @@
+import math
 import os
 import argparse
 import hashlib
@@ -368,8 +369,10 @@ def clustering_accuracy(
         try:
             logging.info("Computing node_coverage...")
             val = float(len(estimated_node_set)) / original_node_set_length
+            if math.isnan(val):
+                logging.warning("node_coverage is NaN")
             pd.Series([val]).to_csv(
-                f"{output_prefix}.node_coverage", index=False, header=False
+                f"{output_prefix}.node_coverage", index=False, header=False, na_rep="NaN"
             )
             tracker.mark_done(f"{output_prefix}.node_coverage")
         except Exception as e:
@@ -381,7 +384,9 @@ def clustering_accuracy(
             val = gt.mutual_information(
                 groundtruth_partition, estimated_partition, norm=True, adjusted=False
             )
-            pd.Series([val]).to_csv(f"{output_prefix}.nmi", index=False, header=False)
+            if math.isnan(val):
+                logging.warning("nmi is NaN")
+            pd.Series([val]).to_csv(f"{output_prefix}.nmi", index=False, header=False, na_rep="NaN")
             tracker.mark_done(f"{output_prefix}.nmi")
         except Exception as e:
             logging.error(f"Error computing nmi: {e}")
@@ -392,7 +397,9 @@ def clustering_accuracy(
             val = gt.mutual_information(
                 groundtruth_partition, estimated_partition, adjusted=True
             )
-            pd.Series([val]).to_csv(f"{output_prefix}.ami", index=False, header=False)
+            if math.isnan(val):
+                logging.warning("ami is NaN")
+            pd.Series([val]).to_csv(f"{output_prefix}.ami", index=False, header=False, na_rep="NaN")
             tracker.mark_done(f"{output_prefix}.ami")
         except Exception as e:
             logging.error(f"Error computing ami: {e}")
@@ -401,7 +408,9 @@ def clustering_accuracy(
         try:
             logging.info("Computing ari...")
             val = adjusted_rand_score(groundtruth_partition, estimated_partition)
-            pd.Series([val]).to_csv(f"{output_prefix}.ari", index=False, header=False)
+            if math.isnan(val):
+                logging.warning("ari is NaN")
+            pd.Series([val]).to_csv(f"{output_prefix}.ari", index=False, header=False, na_rep="NaN")
             tracker.mark_done(f"{output_prefix}.ari")
         except Exception as e:
             logging.error(f"Error computing ari: {e}")
@@ -430,8 +439,10 @@ def clustering_accuracy(
             for name in cm_needed:
                 try:
                     val = cm_funcs[name](confusion_matrix)
+                    if math.isnan(val):
+                        logging.warning(f"{name} is NaN")
                     pd.Series([val]).to_csv(
-                        f"{output_prefix}.{name}", index=False, header=False
+                        f"{output_prefix}.{name}", index=False, header=False, na_rep="NaN"
                     )
                     tracker.mark_done(f"{output_prefix}.{name}")
                 except Exception as e:
