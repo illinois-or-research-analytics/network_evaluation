@@ -280,7 +280,12 @@ def compute_pseudo_diameter(G, cache):
 
 def compute_char_time(G, cache):
     T = gt.transition(gt.extract_largest_component(G, prune=True))
-    eigvals_T = la.eigs(T, k=2, return_eigenvectors=False, which="LR")
+    # ARPACK seeds its starting vector from numpy's global RNG when v0 is
+    # unset, so different process invocations converge to slightly different
+    # eigvals (round-off in the iterative solver).  Pin v0 to a fixed vector
+    # for byte-stable output.
+    v0 = np.ones(T.shape[0], dtype=float)
+    eigvals_T = la.eigs(T, k=2, return_eigenvectors=False, which="LR", v0=v0)
     return float(-1 / np.log(np.sort(eigvals_T.real)[-2]))
 
 
@@ -296,8 +301,11 @@ def compute_percolation_random(G, cache):
     n_trials = 5
     Rr = 0.0
     vertices = list(G.vertices())
+    # Pin the RNG so per-trial shuffles are reproducible across runs.  Using
+    # a local Generator avoids touching numpy's global state.
+    rng = np.random.default_rng(0)
     for _ in range(n_trials):
-        np.random.shuffle(vertices)
+        rng.shuffle(vertices)
         sizes2, _ = gt.vertex_percolation(G, vertices)
         Rr += np.mean(sizes2) / G.num_vertices() / n_trials
     return float(Rr)
