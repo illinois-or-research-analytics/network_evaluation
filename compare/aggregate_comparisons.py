@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 MAPPING = {
     "ec-sbm-v2": "EC-SBMv2",
-    "ec-sbm-v1.5": "EC-SBMv1.5",
+    "ec-sbm-v1": "EC-SBMv1",
     "ec-sbm": "EC-SBM",
     "abcd+o": "ABCD+o",
     "sbm": "SBM",
@@ -240,6 +240,14 @@ def collect_dataframe(
 
     logger.info(f"Collected {len(df_data)} valid dataframes. Concatenating...")
     df = pd.concat(df_data, ignore_index=True)
+
+    # ProcessPoolExecutor.as_completed yields in completion order, so df_data
+    # was appended in non-deterministic order — sort by task identity so the
+    # output CSV is byte-stable across runs.  kind='stable' preserves each
+    # per-task row block's internal order.
+    sort_cols = [c for c in ("network_id", "generator_id", "clustering_id", "run_id") if c in df.columns]
+    if sort_cols:
+        df = df.sort_values(sort_cols, kind="stable").reset_index(drop=True)
 
     return df
 
