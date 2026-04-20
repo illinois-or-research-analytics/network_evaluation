@@ -230,7 +230,9 @@ def load_network_sequences(folder) -> dict:
 
 def compare_scalars(dict1: dict, dict2: dict, dist_types: List[str]) -> List[List[Any]]:
     df_list = []
-    common_stats = set(dict1.keys()).intersection(dict2.keys())
+    # sorted() so output row order is stable across runs (set iteration is
+    # PYTHONHASHSEED-dependent).
+    common_stats = sorted(set(dict1.keys()).intersection(dict2.keys()))
     for name in common_stats:
         val1, val2 = dict1[name], dict2[name]
         for d_type in dist_types:
@@ -246,7 +248,7 @@ def compare_distributions(
     dict1: dict, dict2: dict, dist_types: List[str]
 ) -> List[List[Any]]:
     df_list = []
-    common_stats = set(dict1.keys()).intersection(dict2.keys())
+    common_stats = sorted(set(dict1.keys()).intersection(dict2.keys()))
     for name in common_stats:
         d1, d2 = dict1[name], dict2[name]
         if len(d1) == 0 or len(d2) == 0:
@@ -264,7 +266,7 @@ def compare_sequences(
     dict1: dict, dict2: dict, dist_types: List[str]
 ) -> List[List[Any]]:
     df_list = []
-    common_stats = set(dict1.keys()).intersection(dict2.keys())
+    common_stats = sorted(set(dict1.keys()).intersection(dict2.keys()))
     for name in common_stats:
         df1, df2 = dict1[name], dict2[name]
         df_joined = pd.merge(
