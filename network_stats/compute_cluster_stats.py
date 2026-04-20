@@ -340,8 +340,7 @@ def compute_n_outliers(outliers):
     return len(outliers)
 
 
-def compute_node_coverage(outliers, global_n=None):
-    global_n = compute_global_n(neighbors) if global_n is None else global_n
+def compute_node_coverage(outliers, global_n):
     n_outliers = len(outliers)
     return 1 - n_outliers / global_n if n_outliers > 0 else 1.0
 
