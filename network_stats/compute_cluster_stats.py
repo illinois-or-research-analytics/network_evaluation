@@ -144,6 +144,17 @@ EXPECTED_STATS = [
     "n_clusters",
     "n_disconnected_clusters",
     "n_connected_clusters",
+    # Per-cluster network-level stats on each cluster's intra-induced
+    # subgraph. One entry per cluster iid, NaN where undefined (n < 2
+    # for diameter, n < 3 for ccoeff, isolated singletons, etc.).
+    "cluster_global_ccoeff",
+    "cluster_local_ccoeff",
+    "cluster_mean_degree",
+    "cluster_pseudo_diameter",
+    "cluster_mean_kcore",
+    "cluster_deg_assort",
+    "cluster_n_concomp",
+    "cluster_frac_giant_ccomp",
 ]
 
 
@@ -407,6 +418,93 @@ def compute_mixing_parameter(node, neighbors, node2coms, outliers):
     return 1.0 - n_in / n_neighbors if n_in > 0 else 0.0
 
 
+def _build_cluster_subgraph(neighbors, com):
+    """Build a graph-tool Graph on the cluster's intra-induced subgraph.
+
+    Nodes are reindexed to a contiguous 0..n-1 range; iteration over
+    ``com`` and per-node neighbours uses ``sorted`` so the output is
+    invariant under PYTHONHASHSEED (the gt.Graph adjacency list reflects
+    add-order).
+    """
+    import graph_tool.all as gt
+    com_sorted = sorted(com)
+    local = {node: i for i, node in enumerate(com_sorted)}
+    g = gt.Graph(directed=False)
+    g.add_vertex(len(com_sorted))
+    seen = set()
+    for u in com_sorted:
+        for v in sorted(neighbors.get(u, ())):
+            if v not in local or u == v:
+                continue
+            a, b = (u, v) if u < v else (v, u)
+            if (a, b) in seen:
+                continue
+            seen.add((a, b))
+            g.add_edge(local[a], local[b])
+    return g
+
+
+def compute_cluster_network_stats(neighbors, com):
+    """Return a dict of network-level stats on the cluster's intra-induced
+    subgraph: global_ccoeff, local_ccoeff, mean_degree, pseudo_diameter,
+    mean_kcore, deg_assort, n_concomp, frac_giant_ccomp.
+
+    Trivial clusters (n < 3 for ccoeff, n < 2 for diameter, etc.)
+    return 0.0 rather than NaN so the per-cluster series stays
+    comparable element-by-element (NaN propagates through KS / EMD /
+    L1 distance computations).
+    """
+    import graph_tool.all as gt
+    import numpy as np
+
+    def _safe(v, default=0.0):
+        if v is None:
+            return default
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return default
+        return x if not (np.isnan(x) or np.isinf(x)) else default
+
+    n = len(com)
+    out = {
+        "cluster_global_ccoeff": 0.0,
+        "cluster_local_ccoeff": 0.0,
+        "cluster_mean_degree": 0.0,
+        "cluster_pseudo_diameter": 0.0,
+        "cluster_mean_kcore": 0.0,
+        "cluster_deg_assort": 0.0,
+        "cluster_n_concomp": 0,
+        "cluster_frac_giant_ccomp": 0.0,
+    }
+    if n < 1:
+        return out
+    g = _build_cluster_subgraph(neighbors, com)
+    if g.num_vertices() == 0:
+        return out
+    out["cluster_mean_degree"] = _safe(np.mean(g.get_out_degrees(g.get_vertices())))
+    if n >= 3 and g.num_edges() > 0:
+        out["cluster_global_ccoeff"] = _safe(gt.global_clustering(g)[0])
+        out["cluster_local_ccoeff"] = _safe(np.mean(gt.local_clustering(g).a))
+    if n >= 2 and g.num_edges() > 0:
+        try:
+            out["cluster_pseudo_diameter"] = _safe(gt.pseudo_diameter(g)[0])
+        except Exception:
+            pass
+    if g.num_edges() > 0:
+        out["cluster_mean_kcore"] = _safe(np.mean(gt.kcore_decomposition(g).a))
+    if n >= 2 and g.num_edges() > 1:
+        try:
+            out["cluster_deg_assort"] = _safe(gt.scalar_assortativity(g, "total")[0])
+        except Exception:
+            pass
+    _, comp_hist = gt.label_components(g)
+    out["cluster_n_concomp"] = int(len(comp_hist))
+    if len(comp_hist) > 0 and g.num_vertices() > 0:
+        out["cluster_frac_giant_ccomp"] = _safe(max(comp_hist) / g.num_vertices())
+    return out
+
+
 def compute_n_clusters(n_clusters):
     return n_clusters
 
@@ -548,6 +646,14 @@ def compute_cluster_stats(network_file, community_file, outdir):
         "edge_density": [],
         "mincut": [],
         "modularity": [],
+        "cluster_global_ccoeff": [],
+        "cluster_local_ccoeff": [],
+        "cluster_mean_degree": [],
+        "cluster_pseudo_diameter": [],
+        "cluster_mean_kcore": [],
+        "cluster_deg_assort": [],
+        "cluster_n_concomp": [],
+        "cluster_frac_giant_ccomp": [],
     }
     compute_flags = {
         k: not tracker.is_done(str(output_dir / f"{k}.txt"))
@@ -615,6 +721,18 @@ def compute_cluster_stats(network_file, community_file, outdir):
             cluster_stats["modularity"].append(
                 compute_modularity(neighbors, com, global_m, m, c)
             )
+
+        per_cluster_keys = (
+            "cluster_global_ccoeff", "cluster_local_ccoeff",
+            "cluster_mean_degree", "cluster_pseudo_diameter",
+            "cluster_mean_kcore", "cluster_deg_assort",
+            "cluster_n_concomp", "cluster_frac_giant_ccomp",
+        )
+        if any(compute_flags.get(k, False) for k in per_cluster_keys):
+            net_stats = compute_cluster_network_stats(neighbors, com)
+            for k in per_cluster_keys:
+                if compute_flags.get(k, False):
+                    cluster_stats[k].append(net_stats[k])
 
     global_stats["n_clusters"] = (
         compute_n_clusters(com_iid_count)

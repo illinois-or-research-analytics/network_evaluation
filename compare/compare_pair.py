@@ -29,6 +29,16 @@ CLUSTER_COMM_DISTR_STATS = [
     "edge_density",
     "mincut",
     "modularity",
+    # Per-cluster network-level stats: each cluster's intra-induced
+    # subgraph treated as its own network. Aligned with com.idx.
+    "cluster_global_ccoeff",
+    "cluster_local_ccoeff",
+    "cluster_mean_degree",
+    "cluster_pseudo_diameter",
+    "cluster_mean_kcore",
+    "cluster_deg_assort",
+    "cluster_n_concomp",
+    "cluster_frac_giant_ccomp",
 ]
 
 # --- Constants for Network-Only Stats ---
